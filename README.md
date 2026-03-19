@@ -1,38 +1,74 @@
-# Harmony
+# The Extent Literal project
 
-Harmony provides a language-agnostic project directory structure and maintenance tools for long-lived software development. It enforces clarity about where things live, utilizing role-based work areas and the strict separation of skeleton, team member authored, machine-made, and third-party software.
+The Extent Literal project solves a security and reliability problem that has plagued computing since the shift to reserved-character tokenizers: the literal string. It accomplishes this by bringing back the Fortran H literal in a modern form, introducing editor tools to make them easy to add to source code, and presenting modified versions of compilers and interpreters so they can be parsed.
 
-While designed to manage the complexity of multi-person teams, Harmony serves equally well for an individual developer. A single person can easily assume the roles of administrator, developer, and tester simultaneously by opening separate emacs buffers or terminal windows for each role.
+The current demonstration version introduces `extent-literal.el` for Emacs, and a modified NodeJS interpreter to accept the extent literal tokens.
 
-## Bootstrapping a New Project
+## Problem with the current approach
 
-**Important:** Do not begin writing code directly in a fresh clone of this skeleton. You must decouple your new project from the Harmony version control history to prevent accidentally committing your project files back to the upstream skeleton.
+The current approach to string literals used in computing relies on what communication theory calls 'in-band signaling'. Upon reaching an opening quote, the tokenizer is plunged into the text of another language, one it was probably not explicitly designed for. It then struggles to find special sequences in that stream to recover control and get back to the language it was designed for. 
 
-To create a Harmony-based project, the project administrator performs these steps:
+When any symbol could be part of the data stream, it is impossible to guarantee that control can be recovered. Hence, conventional approaches to this problem remove a symbol from the available data pool and make it special. This is the so-called 'escape symbol'. To allow the escape symbol itself to be transmitted, a specific escape sequence is defined for it.
 
-1. Clone the Harmony project to a local directory.
-2. Remove the `.git` tree.
-3. Rename the Harmony directory to the name of the new project.
-4. Rename the `0pus_Harmony` file to reflect the name of the new project.
-5. Add a line to the `shared/tool/version` file for the new project.
-6. Run `git init -b core_developer_branch` to start your own repository.
+Escaped sequences grow exponentially in length with self-referencing or even complex structures of co-referencing, possibly heterogeneously depending on the mix of languages. In merely one or two levels, string coding becomes a riddle.
 
-## Viewing the Documentation
+1. "Bob said, \"Alice\""
+2. Line 1 text: "\"Bob said, \\\"Alice\\\"\""
+3. Line 2 text: "\"\\\"Bob said, \\\\\\\"Alice\\\\\\\"\\\"\""
 
-To view the project documentation with its intended formatting, a person must provide the RT style library.  One way to do this is to clone the styling repository side-by-side with your new project directory, and then to link it into the third-party directory.
+If a person continues the progression from line 1 to 3, the string grows exponentially. Not only will it become truly large, but no human will be able to keep track of all the escapes.
 
-From the parent directory of your new project, clone the required style repository:
+## The extent literal solution
 
-```bash
-cd ..
-git clone -b release_v1 https://github.com/Thomas-Walker-Lynch/RT-style-JS_public
-```
+The method of extent literals never gives up control, so there is no step for trying to recover it. With an extent literal, the payload data is written exactly as it is from its source. There is no need for preprocessing and adulteration of the data.
 
-Then, from the root of your new project repository, link it:
+This works by having the programmer tell the editor when they start and finish entering a literal. The editor then drops the modified H literal encoding into the document. In the Emacs e-lisp reference implementation, a person accomplishes this by including `extent-literal.el` in the Emacs startup file, which provides the following commands:
+
+All commands are routed through the `M-o` prefix:
+* `M-o m` : Make a new literal.
+* `M-o e` : Edit an existing literal.
+* `M-o s` : Select and cycle through nested literals.
+* `M-o x` : Exit, calculate the new rightmost byte index, and make the display version read only.
+* `M-o a` : Abort the active edit and destroy the literal boundary.
+
+The literal editors displays inlne with the source code, and exits automatically if the cursor leaves the literal box.
+
+The resulting literal becomes a distinct object to interact with in the editor. Extent literals can be nested without the need for any special encoding. A programmer calls the make function while typing a literal, and the new literal becomes a nested literal within the parent literal.
+
+## The extent literal form
+
+A programmer should avoid manually entering the extent literal into the document. Although theoretically possible, using an extent-literal capable editor is highly recommended.
+
+In the source document, the extent literal displays with soft background highlighting as:
+
+`“”` | `“<extent> <content>”`
+
+The first form, two matched quotes, represents a null literal. The second form has an extent number followed by a space, followed by the literal contents. When using the reference extension for Emacs, this display form is read-only. In future versions, the extent field will be hidden. Consequently, all that the user will see is a quoted literal. And yes, those are unicode left and right quotes. The tool inserts those. The user does not type them.
+
+* Example: `“6 golfing”`
+* Example of nested literals: `“C A “2 efg””`
+* Example of quotes in quotes: `“3E Alice said to Bob, “1A The weather on Tuesday was good””`
+
+Repeating the example from the escape character section:
+
+1. Raw text: Bob said, "Alice"
+2. Line 1 text: `“10 Bob said, "Alice"”`
+3. Line 2 text: `“18 “10 Bob said, "Alice"””`
+
+If a person continues the progression from line 1 to 3, the string grows linearly, not exponentially. In the editor these are made with cut and paste one line to the next; no one types the extent fields directly.
+
+## The Advantage Over Auto-Escaping Tools
+
+Someone could argue that if a tool is involved, the tool could simply insert the string with conventional escapes. Indeed, many people are now relying on IDEs to do exactly this. For that person, the Extent Literal project should be a welcome refinement. It is an approach that makes such tools more reliable, and makes their output smaller and far more legible.
+
+## Project Structure
+
+This project utilizes the Harmony directory skeleton. 
+
+To view the complete project documentation with its intended formatting, clone the RT style repository side-by-side with this project, and link it into the third-party directory:
 
 ```bash
 cd shared/third_party
 ln -s ../../../RT-style-JS_public RT-style-JS_public
-```
 
-Find an introductory document at `document/Introduction_to_Harmony.html'. After the style library is installed, clicking on it in file navigator should open it in a browser.
+Then, for example, open document/extent_literal.html in a browser, etc.
