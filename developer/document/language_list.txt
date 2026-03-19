@@ -1,0 +1,34 @@
+list of today's tier-one parsers that the RT literal must safely navigate or intentionally crash:
+
+C / C++
+
+JavaScript / TypeScript / V8
+
+Python
+
+Java
+
+Rust
+
+Bash / Shell
+
+HTML / XML
+
+JSON
+
+If we return to your Unicode matched quotes:
+“<hex> <data>”
+
+Let us run this through the target list:
+
+C / C++: Fatal compiler error (stray '\342' in program).
+
+JavaScript: Fatal SyntaxError (Invalid or unexpected token).
+
+Python: Fatal SyntaxError (invalid character in identifier).
+
+Java: Fatal compiler error (illegal character).
+
+Rust: Fatal compiler error (unknown start of token).
+
+Bash: Fatal error (command not found).
