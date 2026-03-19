@@ -1,0 +1,326 @@
+#!/usr/bin/env -S python3 -B
+# -*- mode: python; coding: utf-8; python-indent-offset: 2; indent-tabs-mode: nil -*-
+"""
+RTfmt — Reasoning Technology code formatter (Predicate Tokenizer)
+
+Commands:
+  RTfmt write [--lisp] <file ...>      Format files in place (rewrite originals)
+  RTfmt copy  [--lisp] <file ...>      Save backups as <file>~ then format originals
+  RTfmt pipe  [--lisp]                 Read from stdin, write to stdout
+  RTfmt self_test                      Run built-in tests
+  RTfmt version                        Show tool version
+  RTfmt help | --help                  Show usage
+"""
+
+import sys ,re ,shutil ,os
+from typing import List ,Tuple ,Optional ,TextIO
+
+RTF_VERSION = "0.5.0-predicate"
+
+def get_usage() -> str:
+  prog_name = os.path.basename(sys.argv[0])
+  return f"""\
+Usage:
+  {prog_name} write [--lisp] <file ...>
+  {prog_name} copy  [--lisp] <file ...>
+  {prog_name} pipe  [--lisp]
+  {prog_name} self_test
+  {prog_name} version
+  {prog_name} help | --help
+"""
+
+# Removed < and > so they are treated as standard CODE operators
+BR_OPEN  = "([{"
+BR_CLOSE = ")]}"
+PAIR = dict( zip(BR_OPEN ,BR_CLOSE) )
+REV  = dict( zip(BR_CLOSE ,BR_OPEN) )
+
+# --------------- Lexer ----------------
+
+class RT_Token:
+  def __init__(self ,kind: str ,text: str):
+    self.kind = kind
+    self.text = text
+
+  def __repr__(self):
+    return f"<{self.kind}:{repr(self.text)}>"
+
+TOKEN_REGEX = re.compile(
+  r'(?P<COMMENT>//[^\n]*|#[^\n]*|(?s:/\*.*?\*/))'
+  r'|(?P<STRING>"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+  r'|(?P<SPACE>[ \t]+)'
+  r'|(?P<NEWLINE>\n)'
+  r'|(?P<COMMA>,)'
+  r'|(?P<BR_OPEN>[\[\(\{])'
+  r'|(?P<BR_CLOSE>[\]\)\}])'
+  r'|(?P<CODE>[^ \t\n,\[\(\{\]\)\}"\'#/]+|/)'
+)
+
+def tokenize(text: str) -> List[RT_Token]:
+  tokens = []
+  for TM_match in TOKEN_REGEX.finditer(text):
+    kind = TM_match.lastgroup
+    text_val = TM_match.group(kind)
+    tokens.append( RT_Token(kind ,text_val) )
+  return tokens
+
+# --------------- Intelligence API ----------------
+
+class TokenStream:
+  def __init__(self ,tokens: List[RT_Token]):
+    self.tokens = tokens
+
+  def get_token(self ,index: int) -> Optional[RT_Token]:
+    if 0 <= index < len(self.tokens):
+      return self.tokens[index]
+    return None
+
+  def next_sig_index(self ,index: int) -> Optional[int]:
+    for TM_i in range(index + 1 ,len(self.tokens)):
+      if self.tokens[TM_i].kind not in ("SPACE" ,"NEWLINE" ,"COMMENT"):
+        return TM_i
+    return None
+
+  def is_first_on_line(self ,index: int) -> bool:
+    for TM_i in range(index - 1 ,-1 ,-1):
+      k = self.tokens[TM_i].kind
+      if k == "NEWLINE":
+        return True
+      if k != "SPACE":
+        return False
+    return True # Start of file
+
+  def indent_of_line(self ,index: int) -> str:
+    for TM_i in range(index ,-1 ,-1):
+      if self.tokens[TM_i].kind == "NEWLINE":
+        if TM_i + 1 < len(self.tokens) and self.tokens[TM_i + 1].kind == "SPACE":
+          return self.tokens[TM_i + 1].text
+        return ""
+    if self.tokens and self.tokens[0].kind == "SPACE":
+      return self.tokens[0].text
+    return ""
+
+  def indent_of_left_match(self ,index: int) -> Optional[str]:
+    tok = self.get_token(index)
+    if not tok or tok.kind != "BR_CLOSE":
+      return None
+    target_opener = REV[tok.text]
+    depth = 0
+    for TM_i in range(index - 1 ,-1 ,-1):
+      t = self.tokens[TM_i]
+      if t.kind == "BR_CLOSE":
+        depth += 1
+      elif t.kind == "BR_OPEN":
+        if depth > 0:
+          depth -= 1
+        elif t.text == target_opener:
+          return self.indent_of_line(TM_i)
+    return None
+
+# --------------- Rule Engine ----------------
+
+def rule_migrate_vertical_commas(stream: TokenStream):
+  TM_i = 0
+  while TM_i < len(stream.tokens):
+    if stream.tokens[TM_i].kind == "COMMA":
+      is_trailing = False
+      next_sig = stream.next_sig_index(TM_i)
+      if next_sig is not None:
+        for TM_j in range(TM_i + 1 ,next_sig):
+          if stream.tokens[TM_j].kind == "NEWLINE":
+            is_trailing = True
+            break
+      
+      if is_trailing:
+        comma_tok = stream.tokens.pop(TM_i)
+        next_sig -= 1 # Shifted because of pop
+        stream.tokens.insert(next_sig ,comma_tok)
+        continue
+    TM_i += 1
+
+def rule_format_horizontal_commas(stream: TokenStream):
+  for TM_i in range(len(stream.tokens) - 1 ,-1 ,-1):
+    if stream.tokens[TM_i].kind == "COMMA":
+      if stream.is_first_on_line(TM_i):
+        continue
+      
+      next_tok = stream.get_token(TM_i + 1)
+      if next_tok and next_tok.kind == "SPACE":
+        stream.tokens.pop(TM_i + 1)
+      
+      prev_tok = stream.get_token(TM_i - 1)
+      if prev_tok and prev_tok.kind == "SPACE":
+        if prev_tok.text != " ":
+          prev_tok.text = " "
+      else:
+        stream.tokens.insert(TM_i ,RT_Token("SPACE" ," "))
+
+def rule_fix_closing_indent(stream: TokenStream):
+  for TM_i in range(len(stream.tokens) - 1 ,-1 ,-1):
+    if stream.tokens[TM_i].kind == "BR_CLOSE" and stream.is_first_on_line(TM_i):
+      target_indent = stream.indent_of_left_match(TM_i)
+      if target_indent is not None:
+        prev = stream.get_token(TM_i - 1)
+        if prev and prev.kind == "SPACE":
+          prev.text = target_indent
+        else:
+          stream.tokens.insert(TM_i ,RT_Token("SPACE" ,target_indent))
+
+def rule_tighten_brackets(stream: TokenStream):
+  for TM_i in range(len(stream.tokens) - 1 ,-1 ,-1):
+    if stream.tokens[TM_i].kind == "SPACE" and not stream.is_first_on_line(TM_i):
+      prev_t = stream.get_token(TM_i - 1)
+      next_t = stream.get_token(TM_i + 1)
+      if (prev_t and prev_t.kind == "BR_OPEN") or (next_t and next_t.kind == "BR_CLOSE"):
+        stream.tokens.pop(TM_i)
+
+def get_bracket_spans(stream: TokenStream) -> List[Tuple[int ,int]]:
+  stack = []
+  spans = []
+  for TM_i ,tok in enumerate(stream.tokens):
+    if tok.kind == "BR_OPEN":
+      stack.append( (tok.text ,TM_i) )
+    elif tok.kind == "BR_CLOSE":
+      if stack and REV[tok.text] == stack[-1][0]:
+        _ ,pos = stack.pop()
+        if not stack:
+          spans.append( (pos ,TM_i) )
+  return spans
+
+def rule_pad_outermost(stream: TokenStream ,is_lisp: bool):
+  if is_lisp:
+    return
+  while True:
+    spans = get_bracket_spans(stream)
+    changed = False
+    for TM_start ,TM_end in reversed(spans):
+      has_inner = False
+      for TM_k in range(TM_start + 1 ,TM_end):
+        if stream.tokens[TM_k].kind in ("BR_OPEN" ,"BR_CLOSE"):
+          has_inner = True
+          break
+      
+      if has_inner:
+        left_has = (TM_start + 1 < len(stream.tokens)) and stream.tokens[TM_start + 1].kind == "SPACE"
+        right_has = (TM_end - 1 >= 0) and stream.tokens[TM_end - 1].kind == "SPACE"
+        if not left_has or not right_has:
+          if not right_has:
+            stream.tokens.insert(TM_end ,RT_Token("SPACE" ," "))
+          if not left_has:
+            stream.tokens.insert(TM_start + 1 ,RT_Token("SPACE" ," "))
+          changed = True
+          break
+    if not changed:
+      break
+
+# --------------- Public API ----------------
+
+def format_tokens(tokens: List[RT_Token] ,is_lisp: bool) -> str:
+  stream = TokenStream(tokens)
+  
+  rule_migrate_vertical_commas(stream)
+  rule_format_horizontal_commas(stream)
+  rule_tighten_brackets(stream)
+  rule_fix_closing_indent(stream)
+  rule_pad_outermost(stream ,is_lisp)
+  
+  return "".join(t.text for t in stream.tokens)
+
+def rt_format_text(text: str ,is_lisp: bool) -> str:
+  tokens = tokenize(text)
+  return format_tokens(tokens ,is_lisp)
+
+def rt_format_stream(inp: TextIO ,out: TextIO ,is_lisp: bool) -> None:
+  text = inp.read()
+  out.write( rt_format_text(text ,is_lisp) )
+
+# --------------- Self-test ----------------
+
+def run_self_test() -> bool:
+  ok = True
+  def chk(src ,exp):
+    nonlocal ok
+    got = rt_format_text(src ,False)
+    if got != exp:
+      print("FAIL:\n" + src + "\n=>\n" + got + "\nexpected:\n" + exp)
+      ok = False
+
+  chk("a,b,c" ,"a ,b ,c")
+  chk("a , b ,  c" ,"a ,b ,c")
+  chk("  ,vertical_arg" ,"  ,vertical_arg") 
+
+  chk("int a=0,\n  b=1,\n  c=2;" ,"int a=0\n  ,b=1\n  ,c=2;") 
+
+  chk("f ( x )" ,"f(x)")
+  chk("f(x) + g(y)" ,"f(x) + g(y)")
+  chk("  {" ,"  {") 
+
+  src = "int g(){int a=0,b=1,c=2; return h(a,b,c);}"
+  exp = "int g(){ int a=0 ,b=1 ,c=2; return h(a ,b ,c); }"
+  chk(src ,exp)
+
+  chk("outer( inner(a,b) )" ,"outer( inner(a ,b) )")
+  
+  # Operator protection check
+  chk("for(int TM = 0; TM < count; ++TM)" ,"for(int TM = 0; TM < count; ++TM)")
+
+  print("SELFTEST OK" if ok else "SELFTEST FAILED")
+  return ok
+
+# --------------- CLI ----------------
+def write_files(paths: List[str] ,is_lisp: bool) -> int:
+  for TM_path in paths:
+    with open(TM_path ,"r" ,encoding="utf-8") as f:
+      data = f.read()
+    formatted = rt_format_text(data ,is_lisp)
+    with open(TM_path ,"w" ,encoding="utf-8") as f:
+      f.write(formatted)
+  return 0
+
+def copy_files(paths: List[str] ,is_lisp: bool) -> int:
+  for TM_path in paths:
+    shutil.copy2(TM_path ,TM_path + "~")
+  return write_files(paths ,is_lisp)
+
+def CLI(argv=None) -> int:
+  args = list(sys.argv[1:] if argv is None else argv)
+  usage_text = get_usage()
+  
+  if not args or args[0] in {"help" ,"--help" ,"-h"}:
+    print(usage_text)
+    return 0
+
+  is_lisp = "--lisp" in args
+  args = [TM_a for TM_a in args if TM_a != "--lisp"]
+  
+  if not args:
+    return 0
+
+  cmd = args[0]
+  rest = args[1:]
+
+  if cmd == "version":
+    print(RTF_VERSION)
+    return 0
+  if cmd == "self_test":
+    ok = run_self_test()
+    return 0 if ok else 1
+  if cmd == "pipe":
+    rt_format_stream(sys.stdin ,sys.stdout ,is_lisp)
+    return 0
+  if cmd == "write":
+    if not rest:
+      print("write: missing <file ...>\n" + usage_text)
+      return 2
+    return write_files(rest ,is_lisp)
+  if cmd == "copy":
+    if not rest:
+      print("copy: missing <file ...>\n" + usage_text)
+      return 2
+    return copy_files(rest ,is_lisp)
+
+  print(f"Unknown command: {cmd}\n" + usage_text)
+  return 2
+
+if __name__ == "__main__":
+  sys.exit( CLI() )

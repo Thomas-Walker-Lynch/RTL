@@ -1,0 +1,26 @@
+# Protect against accidental local .gitignore deletion
+**/scratchpad/*
+!**/scratchpad/.gitignore
+
+# so that .gitignore is not required in consumer/release
+/consumer/made
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+.pytest_cache/
+
+# C / compiled artifacts
+*.o
+*.a
+*.out
+*.so
+
+# OS and editor backup files
+*~
+*.bak
+*.swp
+.DS_Store

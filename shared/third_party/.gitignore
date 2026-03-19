@@ -1,0 +1,8 @@
+# Ignore all files
+*
+
+# But don't ignore the .gitignore file itself
+!/.gitignore
+
+# keep the upstream directory
+!/upstream

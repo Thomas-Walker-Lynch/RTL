@@ -1,0 +1,81 @@
+
+This is the generic install.org doc that comes with the skeleton.
+
+1. $REPO_HOME/shared/third_party/.gitignore:
+
+    * 
+    !/.gitignore
+    !/patch
+
+  The only things from the third party directory that will be pushed to the repo origin is the .gitignore file and the patches.
+
+
+2. downloaded tar files etc. go into the directory `upstream`
+
+    $REPO_HOME/shared/upstream
+ 
+   Typically the contents of upstream are deleted after the install.
+
+3. for the base install
+
+     cd $REPO_HOME/shared/third_party
+     do whatever it takes to install tool, as examples:
+       git clone <tool_path>
+       tar -xzf ../upstream/tar
+       ...
+
+   Be sure to add the path to the tool executable(s) in the $REPO_HOME/env_$ROLE files for the $ROLE who uses the tool.
+
+   Assuming you are not also developing the tool, for safety
+   change each installed git project to a local branch:
+
+     b=<site>_<project>_local_$USER
+     git switch -c "$b"
+   
+
+4. Define some variables to simplify our discussion. Lowercase variable names
+   are not exported from the shell.
+
+     # already set in the environment
+     #   REPO_HOME
+     #   PROJECT
+     #   USER
+
+    # example tool names: 'RT_gcc' 'RT-project share`  etc.
+     tool=<tool-name>  
+     tool_dpath="$REPO_HOME/shared/third_party/$tool"
+     patch_dpath="$REPO_HOME/shared/patch/"
+
+
+5. create a patch series (from current vendor state → your local edits)
+
+   # this can be repeated and will create an encompassing diff file
+
+   # optionally crate a new branch after cloning the third party tool repo and work from there.  You won't make any commits, but in case you plan to ever check the changes in, or have a the bad habit of doing ommits burned into your brain-stem, making a brnch will help.
+
+   # make changes
+
+     cd "$tool_dpath"
+
+     # do your edits
+
+     # Stage edits. Do not commit them!!  Be sure you are in the third party
+     # tool directory when doing `git add -A` and `git diff` commands.
+     git add -A
+
+     # diff the stage from the current repo to create the patch file
+     git diff --staged > "$patch_dpath/$tool"
+
+     # the diff file can be added to the project and checked in at the project level.
+
+
+6. how to apply an existing patch
+
+   Get a fresh clone of the tool into $tool_dpath.
+
+     cd "$tool_dpath"
+     git apply "$patch_dpath/$tool"
+
+   You can see what `git apply` would do by running 
+
+     git apply --check /path/to/your/patch_dpath/$tool

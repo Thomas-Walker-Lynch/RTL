@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>RT code format conventions</title>
+    <script src="setup.js"></script>
+    <script>
+      window.StyleRT.include('RT/theme');
+      window.StyleRT.include('RT/layout/article_tech_ref');
+    </script>
+  </head>
+  <body>
+    <RT-article>
+      <RT-title 
+        author="Thomas Walker Lynch" 
+        date="2026-03-11" 
+        title="RT code format conventions">
+      </RT-title>
+
+      <RT-TOC level="1"></RT-TOC>
+
+      <p>
+        We are not big on revising inherited or legacy code for naming conventions, though no one will hold you back. However, new code should follow these conventions.
+      </p>
+
+      <h1>Object vs. instance nomenclature</h1>
+      <p>
+        We reserve the word 'object' for its general English meaning. When discussing data that is manipulated solely through a defined interface, use the term <RT-term>instance</RT-term>. It is too much of an ask to remove the word <RT-term>object</RT-term> from the language, and this is reflected in the fact that few people use the term precisely.
+      </p>
+      <p>
+        Hence, a programmer can talk about math objects, as things found in mathematics, and C objects, as things found in the C language, even though they are not instantiated from classes, or might not even be data. For example, the <RT-term>for loop</RT-term> is a C object.
+      </p>
+
+      <h1>Identifier Names</h1>
+
+      <h2>Case</h2>
+      <ul>
+        <li>Types, modules: <RT-code>PascalCase</RT-code></li>
+        <li>Functions, variables: <RT-code>snake-kebab_case</RT-code> (if <RT-code>-</RT-code> is supported) or <RT-code>snake_case</RT-code> (if not supported)</li>
+        <li>Globals: <RT-code>UPPER_SNAKE_CASE</RT-code></li>
+      </ul>
+
+      <h2>Proper nouns and acronyms</h2>
+      <p>
+        Even in <RT-code>PascalCase</RT-code> and <RT-code>snake_case</RT-code>, proper nouns and acronyms remain capitalized, as per standard English language conventions (e.g., <RT-code>IEEE_publication_count</RT-code>).
+      </p>
+
+      <h2>Abbreviations</h2>
+      <p>
+        For outer scope identifiers we spell things out for clarity. This follows Lisp programming culture. This makes it clear for people who are 'not in the club' to be able to get started and read the code, and tends to be self documenting. Our file system names mirror our program identifier rules, so you find things such as 'library', 'source', spelled out.
+      </p>
+      <p>
+        For long words, inner scope identifiers, temporary variables, and conventional suffixes, abbreviations become more common. By the time we get to inner loops variable names, such as loop counters are typically 1 letter long. 
+      </p>
+
+      <h2>Primary and secondary separators (snake-kebab_case)</h2>
+      <p>
+        If a language supports the hyphen (<RT-code>-</RT-code>) in identifiers (such as Common Lisp and Emacs Lisp), the identifier is written in <RT-code>snake-kebab_case</RT-code>. The hyphen is used as the primary word separator. The underscore (<RT-code>_</RT-code>) is then reserved strictly as a secondary separator to group logically related portions of an identifier or to denote semantic boundaries, acting as a structural namespace within the symbol (e.g., <RT-code>city-scape_building-height</RT-code>).
+      </p>
+      <p>
+        Otherwise, if the language does not support hyphens in identifiers (such as C, Python, and Java), the identifier falls back to standard <RT-code>snake_case</RT-code> and only the underscore (<RT-code>_</RT-code>) is used for all separation. In C specifically, a center dot (<RT-code>·</RT-code>) is used for ad hoc namespaces.
+      </p>
+
+      <h2>Suffixes</h2>
+
+      <p>Add a container type suffix instead of making variable names plural.</p>
+      <ul>
+        <li><RT-code>*_list</RT-code> / <RT-code>*_seq</RT-code> : generic ordered items / indexed items</li>
+        <li><RT-code>*_map</RT-code> / <RT-code>*_dict</RT-code> : keyed containers</li>
+        <li><RT-code>*_count</RT-code> : number of elements</li>
+      </ul>
+
+      <p>Add a type suffix when it adds clarity.</p>
+      <ul>
+        <li><RT-code>*_bool</RT-code> : boolean</li>
+        <li><RT-code>*_flag</RT-code> : boolean</li>
+      </ul>
+
+      <ul>
+        <li><RT-code>*_dir</RT-code> : directory name</li>
+        <li><RT-code>*_dirn</RT-code> : directory name</li>
+        <li><RT-code>*_dirp</RT-code> : directory path</li>
+        <li><RT-code>*_dirpr</RT-code> / <RT-code>*_dirpa</RT-code> : relative / absolute directory path</li>
+        <li><RT-code>*_file</RT-code> : file name</li>
+        <li><RT-code>*_filen</RT-code> : file name</li>
+        <li><RT-code>*_filep</RT-code> : file path</li>
+        <li><RT-code>*_filepr</RT-code> / <RT-code>*_fpa</RT-code> : relative / absolute file path</li>
+        <li><RT-code>*_fsnodn</RT-code> : file system node name (when type is unspecified)</li>
+        <li><RT-code>*_fsnodp</RT-code> : file system node path (when type is unspecified)</li>
+      </ul>
+
+
+
+      <h1>Comma separated lists</h1>
+
+      <h2>Horizontal comma list</h2>
+      <p>The comma is preceded by a space and abuts the item it follows.</p>
+      <RT-code>
+        int x ,y ,z;
+      </RT-code>
+
+      <h2>Vertical comma list</h2>
+      <p>The comma is placed <em>before</em> the item on the new line, aligned with the item's indentation. This applies to all languages, including Python and C.</p>
+      <RT-code>
+        result = some_function(
+          first_argument
+          ,second_argument
+          ,third_argument
+        );
+      </RT-code>
+
+      <h1>Enclosure spacing</h1>
+
+      <h2>Single-level enclosures</h2>
+      <p>No space padding inside the enclosure punctuation.</p>
+      <RT-code>
+        if(condition){
+          do_something();
+        }
+      </RT-code>
+
+      <h2>Multi-level enclosures</h2>
+      <p>One space of padding is applied <em>only</em> to the outermost enclosure punctuation.</p> 
+
+      <RT-code>
+        if( f(g(x)) ){
+          do_something();
+        }
+      </RT-code>
+
+      <p>This rule is not applied to function calls in Lisp. For example, the outer parentheses forming a function call receive no padding, even when they contain nested data lists:</p>
+      
+      <RT-code>
+        (cat 'a 'b '( 2 (4 5)))
+      </RT-code>
+
+      <h1>Indentation</h1>
+      <ul>
+        <li>Strictly two spaces per indentation level.</li>
+        <li>Never use tabs.</li>
+        <li>Nest lines under the syntactic element that opened them.</li>
+      </ul>
+      <p>Python enforces indentation syntactically. Use two-space indentation for all Python code, even though four is common in the wider ecosystem.</p>
+
+      <h1>The CLI vs. work function pattern</h1>
+      <p>
+        To avoid the "String Trap" (where logic is tightly coupled to the terminal and requires string serialization to reuse) executable modules must separate the Command Line Interface from the core logic.
+      </p>
+      <ul>
+        <li><strong>Work Functions:</strong> Implement core logic. They accept and return native instances (ints, lists, paths), never look at <RT-code>sys.argv</RT-code> (or equivalent), and do not depend on being run from a command line.</li>
+        <li><strong>CLI Function:</strong> The bridge between the OS and the Work Function. It is always named <RT-code>CLI()</RT-code>. It parses string arguments into native types, calls the Work Function, formats the output for the user, and translates exceptions into exit codes.</li>
+      </ul>
+
+      <h2>Python application</h2>
+      <p>Put argument parsing and <RT-code>if __name__ == "__main__":</RT-code> in the CLI section. Keep side effects out of import time.</p>
+
+      <h2>Bash application</h2>
+      <p>Bash scripts should start with <RT-code>#!/usr/bin/env bash</RT-code> and <RT-code>set -euo pipefail</RT-code>. RT-style Bash separates a small top-level CLI harness from a set of functions that implement the work. Parse arguments into variables, call a main function with explicit parameters, and avoid relying on global mutable state where possible.</p>
+
+      <h1>C addendum: error handling and ownership</h1>
+      <ul>
+        <li>Functions should document ownership of pointers and lifetimes.</li>
+        <li>Prefer explicit <RT-code>*_count</RT-code> parameters over sentinel values when passing arrays.</li>
+      </ul>
+
+      <h1>Automated formatting tools</h1>
+      <p>
+        To ensure consistency without manual drudgery, the Harmony skeleton provides a dedicated code formatter called <RT-code>RTfmt</RT-code>. A person can find this tool in the <RT-code>shared/tool/</RT-code> directory.
+      </p>
+
+      <h2>The RTfmt CLI</h2>
+      <p>
+        <RT-code>RTfmt</RT-code> is a shallow-tokenizing formatter written in Python. It parses source code into structural blocks (strings, comments, commas, and enclosures) without needing a full Abstract Syntax Tree. This architecture allows it to safely enforce RT formatting rules across multiple languages while preserving indentation and protecting native operators.
+      </p>
+      <ul>
+        <li><RT-code>RTfmt write &lt;file...&gt;</RT-code> : Formats files in place. It performs a content comparison before writing, leaving the file modification timestamp untouched if the file is already compliant.</li>
+        <li><RT-code>RTfmt pipe</RT-code> : Reads from standard input and writes to standard output, making it ideal for editor integration.</li>
+        <li><RT-code>--lisp</RT-code> : A flag that instructs the formatter to skip the outermost enclosure padding rule, honoring the Lisp function call exception.</li>
+      </ul>
+
+      <h2>Emacs integration</h2>
+      <p>
+        For Emacs users, the <RT-code>RTfmt.el</RT-code> file provides the <RT-code>RTfmt-buffer</RT-code> interactive command.
+      </p>
+      <p>
+        This wrapper passes the current buffer through the <RT-code>RTfmt pipe</RT-code> command. It automatically detects Lisp-derived modes to append the <RT-code>--lisp</RT-code> flag. Furthermore, it utilizes a non-destructive buffer replacement strategy. This ensures that a programmer's cursor position, selection marks, and window scroll state remain anchored exactly where they were before the formatting occurred.
+      </p>
+
+      <h1>Exercises</h1>
+      <h2>Exercise 1: Comma and function call formatting</h2>
+      <p>Reformat the following C code snippet to strictly adhere to the RT code format rules.</p>
+      <RT-code>
+        void my_function(int a, int b, int c) {
+          int result = calculate_value(a, b, c);
+          printf("Result: %d, a: %d, b: %d, c: %d\n", result, a, b, c);
+        }
+      </RT-code>
+
+      <h2>Exercise 2: Multi-level enclosure and short stuff rule</h2>
+      <p>Reformat the following C code snippet to use the multi-level enclosure rule and the short stuff rule.</p>
+      <RT-code>
+        if (check_permissions(user_id, file_path) && is_valid(file_path)) {
+          for (int i = 0; i < 10; i++) {
+            if (i % 2 == 0) {
+              printf("Even: %d\n", i);
+            }
+          }
+        }
+      </RT-code>
+
+      <h2>Exercise 3: Identifier Naming Conventions</h2>
+      <p>
+        Rename the following poorly named variables to strictly adhere to the RT code format rules. Assume these are variables in a C or Python program (using standard <RT-code>snake_case</RT-code>). Pay close attention to proper nouns, acronyms, and the expanded suffix semantics.
+      </p>
+      <ul>
+        <li>A variable holding a list of addresses for HTTP servers: <RT-code>httpServers</RT-code></li>
+        <li>A variable counting the total number of parsed HTML nodes: <RT-code>num_html_nodes</RT-code></li>
+        <li>A custom type representing a JSON payload: <RT-code>json_payload</RT-code></li>
+        <li>A boolean indicating if the NASA data download is complete: <RT-code>isNasaDone</RT-code></li>
+        <li>A variable holding multiple absolute file paths for images: <RT-code>imageFiles</RT-code></li>
+      </ul>
+
+    </RT-article>
+  </body>
+</html>

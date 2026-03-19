@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Introduction to Harmony</title>
+    <script src="setup.js"></script>
+    <script>
+      window.StyleRT.include('RT/theme');
+      window.StyleRT.include('RT/layout/article_tech_ref');
+    </script>
+  </head>
+  <body>
+    <RT-article>
+      <RT-title 
+        author="Thomas Walker Lynch" 
+        date="2026-03-09" 
+        title="Introduction to Harmony">
+      </RT-title>
+
+      <RT-TOC level="1"></RT-TOC>
+
+      <h1>Purpose</h1>
+      <p>
+        Harmony provides a language-agnostic project directory structure and maintenance tools for long-lived, multi-person team software development. The structure exists to enforce:
+      </p>
+      <ol>
+        <li>Clarity about where things live.
+          <ul>
+            <li>Role-based work areas.</li>
+            <li>Separation of skeleton, team member authored, machine-made, and third-party installed software.</li>
+          </ul>
+        </li>
+        <li>A safe, predictable build and promotion workflow.</li>
+      </ol>
+
+      <p>
+        Harmony is a project skeleton, a set of tools and directories that have been checked into a git repository. To create a Harmony-based project, the project administrator performs these steps:
+      </p>
+      <ol>
+        <li>Clone the Harmony project to a local directory.</li>
+        <li>Remove the <RT-code>.git</RT-code> tree.</li>
+        <li>Rename the Harmony directory to the name of the new project.</li>
+        <li>Rename the <RT-code>0pus_Harmony</RT-code> file to reflect the name of the new project.</li>
+        <li>Add a line to the <RT-code>shared/tool/version</RT-code> file for the new project.</li>
+        <li><RT-code>git init -b core_developer_branch</RT-code></li>
+      </ol>
+
+      <p>
+        The order is important so as to protect the Harmony skeleton project from accidental check-ins from users.
+      </p>
+      <p>
+        Leave the Harmony skeleton version in the version file, so that project administrators can understand what has changed in the skeleton over time.
+      </p>
+      <p>
+        The <RT-code>core_developer_branch</RT-code> is the branch that the core development team works on. Project releases are moved to release branches.
+      </p>
+
+      <h1>Environment setup</h1>
+      <p>
+        Python programmers who use virtual environments will be familiar with an analogous process. The term 'virtual environment' does not invoke any hardware virtualization features; rather, it is a local environment setup. To avoid confusion, a Harmony user refers instead to the 'project setup'. The command to establish the environment is called 'setup' instead of 'activate'. Also note that in Harmony, unlike in Python, there are multiple setups available, each tailored to the specific role a person takes on.
+      </p>
+      <p>
+        As of the time of this writing, the defined roles are: <strong>administrator</strong>, <strong>consumer</strong>, <strong>developer</strong>, and <strong>tester</strong>. A person takes on a role by sourcing the top-level <RT-code>setup</RT-code> script and giving the target role as an argument. For example, in a bash shell with <RT-code>></RT-code> as the prompt, the command is:
+      </p>
+
+      <RT-code>
+        > . setup &lt;role&gt;
+      </RT-code>
+
+      <p>
+        Specifically for the developer role:
+      </p>
+        
+      <RT-code>
+        > . setup developer
+      </RT-code>
+
+      <p>
+        For the administrator role:
+      </p>
+        
+      <RT-code>
+        > . setup administrator
+      </RT-code>
+
+      <p>
+        Instead of starting with a period, the <RT-code>source</RT-code> command can be spelled out explicitly, for example:
+      </p>
+      
+      <RT-code>
+        > source setup tester
+      </RT-code>
+
+      <p>
+        Behind the scenes, the <RT-code>setup</RT-code> script performs the following actions:
+      </p>
+
+      <ul>
+        <li>Sources the project-wide setup (<RT-code>shared/tool/setup</RT-code>) to establish the core environment variables (e.g., <RT-code>REPO_HOME</RT-code> and <RT-code>PROJECT</RT-code>).</li>
+        <li>Conditionally sources <RT-code>shared/authored/setup</RT-code> (if present) to apply administrator-injected, project-specific tool configurations.</li>
+        <li>Configures the <RT-code>PATH</RT-code> to include shared tools, library environments, and the specific <RT-code>&lt;role&gt;/tool</RT-code> directory.</li>
+        <li>Changes the working directory into the specified role's workspace.</li>
+        <li>Sources the <RT-code>&lt;role&gt;/tool/setup</RT-code> script. While the earlier steps apply the standard Harmony skeleton setup, this final step applies the role setup that is customized for this specific project.</li>
+      </ul>
+
+      <h1>After git clone</h1>
+      <p>
+        Because git does not track certain directories (such as <RT-code>shared/third_party/</RT-code> and <RT-code>consumer/made/</RT-code>), a freshly cloned repository lacks external dependencies and consumable products. Team members must perform a few steps to populate these areas.
+      </p>
+
+      <h2>Third-party tools</h2>
+      <p>
+        Harmony is language agnostic. When a project makes use of project-specific C, Python, NodeJS, Java, or other tools, the project administrator configures the project to expect these tools in the <RT-code>shared/third_party</RT-code> directory.
+      </p>
+      <p>
+        Because multiple team members will have to repeat the third-party install process after cloning a project, the administrator should carefully document the third party tools installation steps and place the resulting documents in the <RT-code>shared/document</RT-code> directory. (The most common installation method is to clone the third party tool next to the project, then to symbolic link it under <RT-code>shared/third_party/</RT-code>.)
+      </p>
+      <p>
+        If a person clones the project and does not set up third-party tools, commands will fall through the search path and perhaps find system-installed tools. Using system default tools is generally undesirable because each person who clones the project might be running different versions. This variation makes it harder for team members to coordinate and for consumers of the project work product to build functioning tools.
+      </p>
+
+      <h2>Consumer build</h2>
+      <p>
+        In this section we use the term 'consumer' to mean any team member that wants to make use of the project work product. The tester will want to test it, and the consumer role will want to deploy it, etc.
+      </p>
+      <p>
+        An earlier version of Harmony used platform-specific <RT-code>made</RT-code> directories, but this left binaries in the repository and added excessive complexity.
+        So as to avoid that mess, the current version of Harmony requires a work product consumer to run a local build after cloning the project. The results of the build will appear in the <RT-code>consumer/made</RT-code> directory.
+      </p>
+      <p>
+        To facilitate this, the developer must explicitly document the project's build and promote procedure, saving this guide as <RT-code>developer/document/build.html</RT-code>. 
+      </p>
+      <p>
+        The consumer must then read this document and execute the described steps to compile the source and locally populate their <RT-code>consumer/made</RT-code> directory.
+      </p>
+
+      <p>
+        Because the build and promotion tools are strictly isolated within the developer workspace, the consumer must temporarily put on the developer hat to perform the build. Typically the consumer build procedure will be a variation of the following:
+      </p>
+
+      <ol>
+        <li><RT-code>> bash</RT-code></li>
+        <li><RT-code>> cd &lt;project&gt;</RT-code></li>
+        <li><RT-code>> . setup developer</RT-code></li>
+        <li><RT-code>> make CLI</RT-code></li>
+        <li><RT-code>> promote write</RT-code></li>
+        <li><RT-code>> exit</RT-code></li>
+        <li><RT-code>> bash</RT-code></li>
+        <li><RT-code>> cd &lt;project&gt;</RT-code></li>
+        <li><RT-code>> . setup &lt;role&gt;</RT-code></li>
+      </ol>
+
+      <p>
+        This sequence opens a bash shell, assumes the developer role to orchestrate the build, makes the work product, then promotes it to the consumer's workspace. The <RT-code>exit</RT-code> command drops the developer role. The last two lines put the person into the &lt;role&gt; workspace, typically for testing or deploying. Commonly, deployment is a matter of adding the <RT-code>consumer/made</RT-code> directory into the executable search path.
+      </p>
+
+
+      <h1>Directory semantic properties</h1>
+      <p>
+        This section discusses our thinking in naming the files and directories found in the Harmony skeleton.
+      </p>
+      <p>
+        A directory name is considered to be a <RT-term>property</RT-term> given to each file contained in the directory. A full path then forms a semantic sentence describing each file.
+      </p>
+      <p>
+        Because a directory name represents a property, it is rarely plural. For example, when each and every file in a directory is a test, the directory is named <RT-code>test</RT-code>.
+      </p>
+      <p>
+        We run into limitations when using a conventional file system as though it were a property based file system. One limitation is that we are forced to choose a single directory name for each file. When a set of files in a directory all share the same multiple properties, we can use a compound directory name with the properties separated by an underscore, but it is impractical to specify overlapping directory groupings, i.e. we can't arbitrarily define any number of properties for a file in this manner.
+      </p>
+      <p>
+        The following list presents each property type in order of preference when naming directories:
+      </p>
+      <ul>
+        <li><strong>Role Association</strong> (<RT-code>administrator</RT-code>, <RT-code>developer</RT-code>, <RT-code>tester</RT-code>, <RT-code>consumer</RT-code>): Identifies the persona, whether human or AI, intended to interact with the files.</li>
+        <li><strong>Provenance</strong> (<RT-code>authored</RT-code>, <RT-code>made</RT-code>): Indicates whether the file was created by an intellect or mechanically produced by a tool.</li>
+        <li><strong>Capability</strong> (<RT-code>tool</RT-code>, <RT-code>document</RT-code>, <RT-code>experiment</RT-code>): Describes the primary function or structural nature of the file.</li>
+        <li><strong>Lifecycle State</strong> (<RT-code>scratchpad</RT-code>, <RT-code>stage</RT-code>): Denotes the persistence, volatility, or promotion status of the file.</li>
+        <li><strong>Tracking Status</strong> (<RT-code>tracked</RT-code>, <RT-code>untracked</RT-code>): Specifies the version control expectations for the artifacts.</li>
+      </ul>
+
+      <h2>Authored, made, scratchpad, inherited</h2>
+      <p>
+        Files found in a directory named <RT-code>authored</RT-code> were written by project team members. They did not come with the Harmony skeleton, nor with the installation of other software. Project build tools treat <RT-code>authored</RT-code> directories as strictly read-only. Typically these files constitute the intellectual property of a project.
+      </p>
+      <p>
+        All source code that gets built into a promotion or project release must be placed in the developers' <RT-code>authored</RT-code> directory. The story is not as clean for build tools and other files. New documents go into document directories, and new tools go into the tool directories, etc. As a specific example, the developer will almost certainly edit the <RT-code>developer/tool/make</RT-code> file.
+      </p>
+      <p>
+        When the Harmony version line in the <RT-code>shared/tool/version</RT-code> file is left in place, it is straightforward for a project administrator to determine which Harmony skeleton files have been edited in a project, and which new files have been added.
+      </p>
+      <p>
+        Files found in a directory named <RT-code>scratchpad</RT-code> are not tracked. Hence, a <RT-code>git clone</RT-code> will always return empty <RT-code>scratchpad</RT-code> directories. It is common for tools to place intermediate files on a scratchpad. It is also common for files to be staged on a scratchpad. Tools play nice and use subdirectories on the pad, so a person who is aware of those subdirectory names can use a scratchpad as a temporary directory. There is a scratchpad maintenance tool that comes with the Harmony, called unimaginatively, <RT-code>scratchpad</RT-code>. Pay attention as one of its commands is <RT-code>clear</RT-code>, and that deletes everything on the current directory's scratchpad.
+      </p>
+      <p>
+        Third party software is installed under <RT-code>shared/third_party</RT-code>. Other files are said to be <RT-term>inherited</RT-term>, or to be <RT-term>customizations</RT-term>.
+      </p>
+
+      <h1>Top-level repository layout</h1>
+      <p>
+        A team member will source the project setup file to take on a role. As of this writing, the supported roles are: <RT-code>administrator</RT-code>, <RT-code>developer</RT-code>, <RT-code>tester</RT-code>, and <RT-code>consumer</RT-code>.
+      </p>
+
+      <ul>
+        <li><RT-code>administrator/</RT-code> : Project-local tools and skeleton maintenance.</li>
+        <li><RT-code>developer/</RT-code> : Primary workspace for developers.</li>
+        <li><RT-code>tester/</RT-code> : Regression and validation workspace for testers.</li>
+        <li><RT-code>consumer/</RT-code> : Consumption workspace holding the <RT-code>consumer/made</RT-code> directory.</li>
+        <li><RT-code>shared/</RT-code> : Shared ecosystem tools and global environments.</li>
+      </ul>
+
+      <h2>The administrator work area</h2>
+      <p>
+        This directory holds the tools and documentation used to manage the project as a whole. It includes the HTML documentation for the project ontology and workflow, as well as project-local tools utilized by the administrator to maintain the Harmony skeleton.
+      </p>
+
+      <h2>The developer work area</h2>
+      <p>
+        This directory is entered by first going to the top-level directory of the project, then sourcing <RT-code>. setup developer</RT-code>.
+      </p>
+      <ul>
+        <li><RT-code>authored/</RT-code> : Human-written source. Tracked by Git.</li>
+        <li><RT-code>made/</RT-code> : Tracked artifacts generated by tools (e.g., links to CLI entry points).</li>
+        <li><RT-code>experiment/</RT-code> : Try-it-here code. Short-lived spot testing.</li>
+        <li><RT-code>scratchpad/</RT-code> : Git-ignored directory. Holds all intermediate build outputs, including the <RT-code>made</RT-code> directory for promotions.</li>
+        <li><RT-code>tool/</RT-code> : Developer-specific tools (like the promote and make scripts).</li>
+      </ul>
+
+      <h2>The tester work area</h2>
+      <p>
+        This directory is dedicated to formal testing, including regression suites. While a developer can run and keep informal spot tests in their <RT-code>experiment/</RT-code> directory, any experiment promoted to a formal test is moved here. This enforces the boundary between writing code and validating it.
+      </p>
+
+      <h2>The shared tree</h2>
+      <p>
+        This directory contains ecosystem tools and global environments available to all roles. This includes the shared tool directory, as well as third-party installations (like Python virtual environments or compilers) required by the project. To assist in project specific modifications to the Harmony skeleton, Harmony comes with an empty <RT-code>shared/authored</RT-code> directory that is listed earlier in the executable search path than <RT-code>shared/tool</RT-code>.
+      </p>
+
+      <h2>The consumer tree</h2>
+      <p>
+        The <RT-code>consumer/made/</RT-code> tree is where developers put work product that is ready to be consumed. The entire <RT-code>consumer/made</RT-code> directory is git-ignored and treated as a transient deployment target.
+      </p>
+      <p>
+        Artifacts arrive in the <RT-code>consumer/made/</RT-code> tree <em>only</em> when the promote script is invoked, which performs a flat-copy from the developer's <RT-code>scratchpad/made</RT-code> directory.
+      </p>
+
+      <h2>Document directories</h2>
+      <p>
+        There is a directory for documents that talks about the project as a whole, one for each role, one for tools that are shared among the roles, and the released work product probably comes with a document directory of its own.
+      </p>
+      <ul>
+        <li><RT-code>document/</RT-code> : Top-level onboarding, project-wide structure, such as this document.</li>
+        <li><RT-code>consumer/made/document/</RT-code> : Documentation for end-users of made code (e.g., man pages, application manuals, library API references).</li>
+        <li><RT-code>administrator/document/</RT-code> : Documentation for maintaining the project skeleton and global tools.</li>
+        <li><RT-code>developer/document/</RT-code> : Documentation for developers, including coding standards and internal API guides.</li>
+        <li><RT-code>tester/document/</RT-code> : Documentation for testers detailing test plans and tools.</li>
+        <li><RT-code>shared/document/</RT-code> : Documentation on installing and configuring shared tools.</li>
+      </ul>
+
+      <p>
+        Note that the <RT-code>consumer/made</RT-code> directory is untracked by git and maintained by a tool. (Said tool is <RT-code>developer/tool/promote</RT-code>. It is owned and used by the developer as part of the build process.) Documents that are being promoted for eventual release, and appear in the <RT-code>made</RT-code> directory originate from somewhere from the <RT-code>developer/authored</RT-code> directory depending on how the developer has organized his workspace, but probably in <RT-code>developer/authored/document</RT-code>. Perhaps a future version of Harmony will have a tech-writer role, but that is not the case now.
+      </p>
+
+      <p>
+        Currently, our developers write documents directly in HTML using the RT semantic tags. See the <RT-code>RT-style-JS_public</RT-code> project and the documentation there. A common approach is to copy another document and the <RT-code>setup.js</RT-code> file, then to type over the top of that other document. Only one <RT-code>setup.js</RT-code> file is used per directory. Be sure to edit the relative root path found at the top of <RT-code>setup.js</RT-code>. Plain text, emacs org, and mark down have all been used in prior versions of Harmony.
+      </p>
+
+      <h2>Untracked directories</h2>
+      <ol>
+        <li><RT-code>consumer/made/</RT-code></li>
+        <li><RT-code>shared/third_party/</RT-code></li>
+        <li><RT-code>**/scratchpad/</RT-code></li>
+      </ol>
+
+      <h1>Workflow</h1>
+      <p> See the document "Product Development Roles and Workflow" for more details.</p>
+
+      <h1>Developer promotion and project releases</h1>
+      <p>
+        As a first step, a developer creates a <RT-term>promotion candidate</RT-term> inside of the <RT-code>consumer/made/</RT-code> directory. This is typically done by running <RT-code>make</RT-code> to stage the artifacts into <RT-code>scratchpad/made</RT-code>, where they can be experimented on, followed by running <RT-code>promote write</RT-code>.  The developer will often modify the versions of one or both of those tools that come with the Harmony skeleton. The promotion candidate remains stable until the next <RT-term>promotion</RT-term>.
+      </p>
+      <p>
+        Then the tester runs tests on the promotion candidate. Tests must only read from the <RT-code>consumer/made/</RT-code> directory, though local copies can be made and edited as experiments. Currently bugs are filed using an external issues tool.
+      </p>
+      <p>
+        It is common for a developer to open a second window on his desktop, and then enter the project as a tester in that second window. The developer can then make a promotion candidate, run the tests, edit source code, and perhaps tests, and then quickly spin through the test-debug-fix-promote cycle repeatedly.
+      </p>
+      <p>
+        When the product manager determines the work product to be sufficiently reliable and feature rich, the administrator will make a <RT-term>project release</RT-term>. He will do this by creating a branch called <RT-code>release_v&lt;major&gt;</RT-code> and tagging it. The major release numbers go up incrementally.
+      </p>
+
+      <h1>The version 2.2 Harmony directory tree</h1>
+
+      <RT-code>
+      2026-03-09 01:42:16 Z [Harmony:administrator] Thomas_developer@StanleyPark
+      §/home/Thomas/subu_data/developer/project§
+      > tree Harmony
+      Harmony
+      ├── 0pus_Harmony
+      ├── administrator
+      │ ├── authored
+      │ ├── document
+      │ │ └── setup.js
+      │ └── tool
+      │   ├── archive
+      │   └── setup
+      ├── consumer
+      │ ├── scratchpad
+      │ └── tool
+      │   └── env
+      ├── developer
+      │ ├── authored
+      │ │ └── hello.CLI.c
+      </RT-code>
+      <RT-code>
+      │ ├── document
+      │ │ ├── 02_RT_Code_Format.html
+      │ │ ├── 03_Naming_and_Directory_Conventions.html
+      │ │ ├── 04_Language_Addenda.html
+      │ │ └── setup.js
+      │ ├── experiment
+      │ ├── made
+      │ ├── scratchpad
+      │ └── tool
+      │   ├── do_all
+      │   ├── make
+      │   ├── makefile
+      │   ├── promote
+      │   └── setup
+      ├── document
+      │ ├── Introduction_to_Harmony.html
+      │ ├── Product_Development_Roles_and_Workflow.html
+      │ └── setup.js
+      ├── LICENSE
+      </RT-code>
+      <RT-code>
+      ├── README.md
+      ├── scratchpad
+      │ ├── Harmony__79f9d52__2026-03-07_085628Z.tar
+      │ └── Harmony__e665bb7__2026-03-09_013712Z.tar
+      ├── setup
+      ├── shared
+      │ ├── authored
+      │ ├── document
+      │ │ ├── install_generic.org
+      │ │ ├── install_Python.org
+      │ │ └── setup.js
+      │ ├── made
+      │ ├── style_directory_dict.js
+      │ ├── third_party
+      │ │ ├── RT-style-JS_public -> ../../../RT-style-JS_public/
+      │ │ └── upstream
+      │ └── tool
+      │   ├── scratchpad
+      │   ├── setup
+      </RT-code>
+      <RT-code>
+      │   ├── style
+      │   └── version
+      └── tester
+          ├── authored
+          │ └── test_routine.sh
+          ├── RT_Format
+          │ ├── RT_Format
+          │ ├── RT_Format.el
+          │ ├── test_0_data.c
+          │ └── test_1_data.py
+          └── tool
+              └── setup
+
+      30 directories, 36 files
+
+      2026-03-09 01:42:19 Z [Harmony:administrator] Thomas_developer@StanleyPark
+      §/home/Thomas/subu_data/developer/project§
+      > 
+      </RT-code>
+
+    </RT-article>
+  </body>
+</html>

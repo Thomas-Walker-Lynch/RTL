@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+script_afp=$(realpath "${BASH_SOURCE[0]}")
+
+# --------------------------------------------------------------------------------
+# Network Interfaces
+#
+  export RT_SERVER_SOCKET_FP="scratchpad/network_interface/RT_server.sock"

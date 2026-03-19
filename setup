@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# setup - enter a project role environment
+# (must be sourced)
+
+script_afp=$(realpath "${BASH_SOURCE[0]}")
+if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+  echo "${script_afp}:: This script must be sourced, not executed."
+  exit 1
+fi
+
+project_roles="administrator consumer developer tester"
+
+print_usage(){
+  echo "usage: . setup <role>"
+  echo "known roles: ${project_roles}"
+}
+
+if [ -z "${1:-}" ] || [ "${1}" == "-h" ] || [ "${1}" == "--help" ]; then
+  print_usage
+  return 0
+fi
+
+role_is_valid=false
+for r in ${project_roles}; do
+  if [ "${1}" == "${r}" ]; then
+    role_is_valid=true
+    break
+  fi
+done
+
+if [ "${role_is_valid}" == "false" ]; then
+  echo "setup: unrecognized role or option '${1}'"
+  print_usage
+  return 1
+fi
+
+# setup the project
+#
+  source shared/tool/setup
+  if [[ -f "shared/authored/setup" ]]; then
+    source shared/authored/setup
+  fi
+
+# setup tools
+#
+  export PYTHON_HOME="${REPO_HOME}/shared/third_party/Python"
+  if [[ ":${PATH}:" != *":${PYTHON_HOME}/bin:"* ]]; then
+    export PATH="${PYTHON_HOME}/bin:${PATH}"
+  fi
+
+  RT_gcc="${REPO_HOME}/shared/third_party/RT_gcc/release"
+  if [[ ":${PATH}:" != *":${RT_gcc}:"* ]]; then
+    export PATH="${RT_gcc}:${PATH}"
+  fi
+
+# setup the role
+#
+  export ROLE="${1}"
+
+  tool="${REPO_HOME}/${ROLE}/tool"
+  if [[ ":${PATH}:" != *":${tool}:"* ]]; then
+    export PATH="${tool}:${PATH}"
+  fi
+
+  export SETUP="${ROLE}/tool/setup"
+
+  cd "${ROLE}" || return 1
+  if [ -f "tool/setup" ]; then
+    source "tool/setup"
+    echo "in environment: ${SETUP}"
+  else
+    echo "not found: ${SETUP}"
+  fi
