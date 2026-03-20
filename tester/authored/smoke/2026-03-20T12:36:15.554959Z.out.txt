@@ -1,4 +1,0 @@
-Running V8 Extent Literal Tests...
-Basic: golfing
-With Quotes: He said, "Hello!"
-Nested: A “2 efg”

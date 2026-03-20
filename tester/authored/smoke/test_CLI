@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-script_afp=$(realpath "${BASH_SOURCE[0]}")
-
-node test_0.js

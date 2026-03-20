@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+import sys
+import subprocess
+import glob
+
+def execute_test_suite():
+  print("test_CLI version: 1.0.1\n")
+
+  test_fpa_list = []
+
+  if( len(sys.argv) > 1 ):
+    for TM in range( 1, len(sys.argv) ):
+      if( sys.argv[TM].endswith(".js") ):
+        test_fpa_list.append(sys.argv[TM])
+  else:
+    test_fpa_list = glob.glob("test_*.js")
+    test_fpa_list.sort()
+
+  if( len(test_fpa_list) == 0 ):
+    print("No tests found.")
+    return False
+
+  print("found:")
+  for TM in range( len(test_fpa_list) ):
+    print(f"   {test_fpa_list[TM]}")
+  print("")
+
+  passed_count = 0
+  failed_count = 0
+  failed_fpa_list = []
+
+  for TM in range( len(test_fpa_list) ):
+    current_test_fpa = test_fpa_list[TM]
+
+    process_result = subprocess.run(
+      [
+        "node"
+        ,current_test_fpa
+      ]
+      ,capture_output=True
+      ,text=True
+    )
+
+    test_passed_bool = True
+
+    if(process_result.returncode != 0):
+      test_passed_bool = False
+
+    if( len(process_result.stdout) > 0 ):
+      test_passed_bool = False
+
+    if( len(process_result.stderr) > 0 ):
+      test_passed_bool = False
+
+    if(test_passed_bool):
+      passed_count += 1
+    else:
+      failed_count += 1
+      failed_fpa_list.append(current_test_fpa)
+
+  print("failed:")
+  if(failed_count == 0):
+    print("   none")
+  else:
+    for TM in range( len(failed_fpa_list) ):
+      print(f"   {failed_fpa_list[TM]}")
+
+  print("\nsummary:")
+  print(f"    passed: {passed_count}")
+  print(f"    failed: {failed_count}")
+
+  if(failed_count > 0):
+    return False
+  return True
+
+if __name__ == "__main__":
+  success_bool = execute_test_suite()
+  if(not success_bool):
+    sys.exit(1)
+  sys.exit(0)
