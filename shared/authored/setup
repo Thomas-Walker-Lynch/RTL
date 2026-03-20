@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+script_afp=$(realpath "${BASH_SOURCE[0]}")
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  echo "$script_afp:: This script must be sourced, not executed."
+  exit 1
+fi
+
+PATH="$REPO_HOME/shared/third_party/extent-literal_node/out/Release/:$PATH"

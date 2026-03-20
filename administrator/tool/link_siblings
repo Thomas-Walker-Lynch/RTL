@@ -1,0 +1,59 @@
+#!/usr/bin/env -S python3 -B
+# -*- mode: python; coding: utf-8; python-indent-offset: 2; indent-tabs-mode: nil -*-
+
+import os
+import sys
+
+def work_link_siblings(repo_home_dp: str) -> None:
+  project_name_str = os.path.basename(repo_home_dp)
+  prefix_str = f"{project_name_str}_"
+  parent_dp = os.path.dirname(repo_home_dp)
+  third_party_dp = os.path.join(
+    repo_home_dp
+    ,"shared"
+    ,"third_party"
+  )
+
+  if( not os.path.exists(third_party_dp) ):
+    os.makedirs(third_party_dp ,exist_ok=True)
+
+  for sibling_name_str in os.listdir(parent_dp):
+    if( sibling_name_str.startswith(prefix_str) ):
+      sibling_dp = os.path.join(
+        parent_dp
+        ,sibling_name_str
+      )
+      
+      if( os.path.isdir(sibling_dp) ):
+        target_link_dp = os.path.join(
+          third_party_dp
+          ,sibling_name_str
+        )
+        
+        if( os.path.exists(target_link_dp) or os.path.islink(target_link_dp) ):
+          os.unlink(target_link_dp)
+        
+        os.symlink(
+          sibling_dp
+          ,target_link_dp
+        )
+        print(f"Linked {sibling_name_str} into shared/third_party")
+
+def CLI() -> int:
+  repo_home_dp = os.environ.get("REPO_HOME")
+  
+  if( not repo_home_dp ):
+    print("Error: REPO_HOME environment variable is not set." ,file=sys.stderr)
+    return 1
+  
+  try:
+    work_link_siblings(repo_home_dp)
+  except Exception as e:
+    print(f"Error linking sibling projects: {e}" ,file=sys.stderr)
+    return 1
+    
+  return 0
+
+if __name__ == "__main__":
+  sys.exit(CLI())
+  
