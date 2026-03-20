@@ -1,0 +1,24 @@
+Executive Summary: Eradicating Injection Vulnerabilities via Extent Literals
+
+The Problem: The Failure of In-Band Signaling
+
+Modern computing infrastructure relies heavily on in-band signaling to define string literals. Tokenizers plunge into data streams, scanning character by character for a reserved closing delimiter, such as a quotation mark. This architecture creates a fundamental vulnerability: aliasing. When arbitrary or malicious data contains the delimiter, the tokenizer prematurely exits the data context and executes the remaining payload as commands.
+
+The industry standard mitigation is escaping—reserving an escape character to signal literal interpretation. However, escaping fails in complex, multi-language environments (e.g., a SQL query inside a JavaScript string inside an HTML template). Escaping requires exponential growth of characters when nested, strips data of its first-order literal status, and places an impossible cognitive load on developers. A single missed escape character results in catastrophic vulnerabilities, including Cross-Site Scripting (XSS) and SQL Injection.
+
+The Solution: Out-of-Band Lexical Signaling
+
+The Extent Literal project resolves this architectural flaw by decoupling control from data. It modernizes the length-encoded string concept (historically seen in the Fortran H literal) for contemporary, UTF-8 capable environments.
+
+An extent literal defines the exact byte count of the payload before the payload begins. Visually represented to the programmer as “<extent> <content>”, the tokenizer reads the integer extent and blindly consumes that exact number of bytes. The parser never scans the payload for delimiters.
+
+The Innovation: Tooling and Implementation
+
+Historically, length-encoded strings were hostile to human programmers, as manually counting bytes is error-prone. The Extent Literal project solves this through a dual approach:
+
+Editor Integration: Editor extensions (such as the provided extent-literal.el reference implementation for Emacs) handle the byte calculation silently. A programmer invokes a bounding box, types naturally, and the editor injects the calculated extent upon exit.
+
+Compiler/Interpreter Modification: Modified parsers (such as a patched V8/NodeJS interpreter) are updated to recognize the extent literal token, allowing them to bypass scanning and read the data block directly into memory.
+
+Impact and Objectives
+By adopting extent literals, computing environments gain mathematical immunity to injection attacks. Nested strings scale linearly rather than exponentially, reducing code size and complexity. The objective of this funding request is to expand the demonstration tooling, formalize the standard for open-source adoption, and implement extent literal parsing across a wider array of tier-one compilers and interpreters.
