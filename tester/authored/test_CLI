@@ -4,14 +4,14 @@ import subprocess
 import glob
 
 def execute_test_suite():
-  print("test_CLI version: 1.0.1\n")
+  print("test_CLI version: 1.0.3\n")
 
   test_fpa_list = []
 
   if( len(sys.argv) > 1 ):
-    for TM in range( 1, len(sys.argv) ):
-      if( sys.argv[TM].endswith(".js") ):
-        test_fpa_list.append(sys.argv[TM])
+    for i in range( 1, len(sys.argv) ):
+      if( sys.argv[i].endswith(".js") ):
+        test_fpa_list.append(sys.argv[i])
   else:
     test_fpa_list = glob.glob("test_*.js")
     test_fpa_list.sort()
@@ -21,16 +21,15 @@ def execute_test_suite():
     return False
 
   print("found:")
-  for TM in range( len(test_fpa_list) ):
-    print(f"   {test_fpa_list[TM]}")
+  for i in range( len(test_fpa_list) ):
+    print(f"   {test_fpa_list[i]}")
   print("")
 
   passed_count = 0
   failed_count = 0
-  failed_fpa_list = []
 
-  for TM in range( len(test_fpa_list) ):
-    current_test_fpa = test_fpa_list[TM]
+  for i in range( len(test_fpa_list) ):
+    current_test_fpa = test_fpa_list[i]
 
     process_result = subprocess.run(
       [
@@ -55,15 +54,28 @@ def execute_test_suite():
     if(test_passed_bool):
       passed_count += 1
     else:
+      if(failed_count == 0):
+        print("failed:")
+        
       failed_count += 1
-      failed_fpa_list.append(current_test_fpa)
+      print(f"   {current_test_fpa}")
 
-  print("failed:")
+      if( len(process_result.stdout) > 0 ):
+        stdout_line_list = process_result.stdout.strip().split('\n')
+        for msg_i in range( len(stdout_line_list) ):
+          if( len(stdout_line_list[msg_i]) > 0 ):
+            print(f"      {stdout_line_list[msg_i]}")
+
+      if( len(process_result.stderr) > 0 ):
+        stderr_line_list = process_result.stderr.strip().split('\n')
+        for msg_i in range( len(stderr_line_list) ):
+          if( len(stderr_line_list[msg_i]) > 0 ):
+            print(f"      stderr: {stderr_line_list[msg_i]}")
+      
+      sys.stdout.flush()
+
   if(failed_count == 0):
-    print("   none")
-  else:
-    for TM in range( len(failed_fpa_list) ):
-      print(f"   {failed_fpa_list[TM]}")
+    print("failed:\n   none")
 
   print("\nsummary:")
   print(f"    passed: {passed_count}")

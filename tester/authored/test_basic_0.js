@@ -22,7 +22,8 @@ function run_tests(){
     return false;
   }
 
-  const nested_str = “8 A “2 efg””;
+  const nested_str = “C A “2 efg”” 
+
   if(nested_str !== "A “2 efg”"){
     if(debug_print_bool){
       console.log("Failed nested_str check. Expected 'A “2 efg”', got:" ,nested_str);
@@ -39,3 +40,4 @@ if( typeof require !== 'undefined' && require.main === module ){
     process.exit(1);
   }
 }
+

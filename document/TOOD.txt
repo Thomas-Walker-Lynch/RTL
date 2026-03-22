@@ -1,0 +1,37 @@
+
+--------------------------------------------------------------------------------
+2026-03-20 14:59:10 ** 
+
+The current extent-literal_node modifications were made in scanner.c, but by that point in the code, the tokenizer has already broken the payload as a black box model, opened it up, and interpreted it as UTF8. 
+
+  UTF8 does the following:
+
+  1-byte (ASCII): The byte starts with a 0 bit. (0xxxxxxx)
+
+  2-byte: The first byte starts with 110. (110xxxxx)
+
+  3-byte: The first byte starts with 1110. (1110xxxx)
+
+  4-byte: The first byte starts with 11110. (11110xxx)
+
+  Every subsequent byte in a multi-byte sequence is a designated "continuation byte" and must always start with the bits 10 (10xxxxxx).
+
+An extent-literal payload can be anything, including data that is not UTF8 specification conforming. In the current extent-literal_node mods, such extent-literals will suffer from rejection by the NodeJS tokenizer.
+
+In this 'version 0.1' we are only using extent-tokens as initial values for strings, and as such an error at some point is warranted if an initial value is not UTF8.  It would be like trying to assign a floating point value to an integer.
+
+There are other scenarios, which we are not working on currently, where a literal initializer with non-UTF8 payload would useful. Say for example, holding legacy parity bit ASCII strings, or perhaps an icon image. However we are not starting with this. 
+
+As far as I know, this 'string literal but not full literal' limitation also applies to the current extent-literal.el helper for inserting literal strings into source files.
+
+-Thomas
+
+--------------------------------------------------------------------------------
+2026-03-20 15:41:05
+
+I need to expand on the documentation.  One thing to be added is to point out that a literal is not typed. Typing is a higher level construct.
+
+I did consider other formats where a type would be embedded with the literal, perhaps as a single letter, but these run into edge cases. At the base, there is need for a literal, type goes on top of that. Languages already do a pretty good job of binding type to values, they don't need a new literal format for that, perhaps.
+
+
+-Thomas
