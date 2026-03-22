@@ -995,12 +995,17 @@
       (
         (map (make-sparse-keymap))
         )
+  
       (define-key map (kbd "m") 'RT-literal·editor·make_cmd)
       (define-key map (kbd "e") 'RT-literal·editor·edit_cmd)
       (define-key map (kbd "s") 'RT-literal·editor·select-cycle_cmd)
       (define-key map (kbd "a") 'RT-literal·editor·abort_cmd)
       (define-key map (kbd "x") 'RT-literal·editor·exit_cmd)
+    
+      (define-key map (kbd "q") 'RT-literal·editor·quote-region_cmd)
+      (define-key map (kbd "c") 'RT-literal·editor·convert-region_cmd)
+
       map
       ))
+
   (global-set-key (kbd "M-o") RT-literal-mode-map)
-  ;;; (global-set-key (kbd "C-x \"") RT-literal-mode-map)
