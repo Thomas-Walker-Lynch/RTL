@@ -10,7 +10,7 @@
 ;;;       content_field::
 ;;;         array with max index of said extent of anything
 ;;;
-;;; It is displayed to the user with this syntax:
+;;; It is displayed to a person with this syntax:
 ;;;   literal display:: 
 ;;;     <left_delimiter>[<content_field>]<right_delimiter>
 ;;;
@@ -91,7 +91,6 @@
     (RT-literal·stack-is-empty RT-literal·overlay-stack)
     )
 
-
   ;;  Enables keeping the topological terminology consistent in the code body
   ;;
 
@@ -103,50 +102,9 @@
     `(overlay-end ,overlay)
     )
 
-  ;; string manipulation
-  ;;
-
-  (defun RT-literal·strip-outer-quotes (text)
-      (let 
-        (
-          (len (length text))
-          )
-        (if 
-          (>= len 2)
-          (let 
-            (
-              (first-char (substring text 0 1))
-              (last-char (substring text (- len 1) len))
-              )
-            (if 
-              (and (string= first-char last-char) (or (string= first-char "\"") (string= first-char "'")))
-              (substring text 1 (- len 1))
-              text
-              ))
-          text
-          )))
-
-    (defun RT-literal·unescape-string (text)
-      (replace-regexp-in-string
-        "\\\\\\(.\\)"
-        (lambda (match_str)
-          (let 
-            (
-              (char_str (substring match_str 1 2))
-              )
-            (pcase char_str
-              ("n" "\n")
-              ("t" "\t")
-              ("r" "\r")
-              (_ char_str)
-              )))
-        text t t)
-      )
-
-
-  ;;;------------------------------------------------------------------------------
-  ;;; Configuration
-  ;;;
+;;;------------------------------------------------------------------------------
+;;; Configuration
+;;;
 
   ;; emphasize a character in a cell interpretation
   (setq-local cursor-type 'box)
@@ -163,7 +121,7 @@
     )
 
   (defvar-local RT-literal·highlight_func 'RT-literal·highlight-shades)
-  (defvar-local RT-literal·hide-extent t)
+  (defvar-local RT-literal·hide-extent nil)
 
   ;; Buffer-Local State
   (defvar-local RT-literal·overlay-stack nil)
@@ -186,10 +144,10 @@
       'json-mode-hook
       ))
 
-  (defun RT-literal·enable-auto-scan ()
-    (dolist (hook_sym RT-literal·target-mode-hooks_list)
-      (add-hook hook_sym 'RT-literal·scan-buffer)
-      ))
+  ;; wrap with indentation
+  ;;
+  (defvar-local RT-literal·display-wrap-offset 2)
+  (defvar-local RT-literal·display-wrap-enabled t)
 
 ;;;------------------------------------------------------------------------------
 ;;; Implementation
@@ -285,9 +243,46 @@
         (overlay-put overlay 'face selected-face_list)
         )))
 
-
-
+  ;; string manipulation
   ;;
+
+  (defun RT-literal·strip-outer-quotes (text)
+    (let 
+      (
+        (len (length text))
+        )
+      (if 
+        (>= len 2)
+        (let 
+          (
+            (first-char (substring text 0 1))
+            (last-char (substring text (- len 1) len))
+            )
+          (if 
+            (and (string= first-char last-char) (or (string= first-char "\"") (string= first-char "'")))
+            (substring text 1 (- len 1))
+            text
+            ))
+        text
+        )))
+
+    (defun RT-literal·unescape-string (text)
+      (replace-regexp-in-string
+        "\\\\\\(.\\)"
+        (lambda (match_str)
+          (let 
+            (
+              (char_str (substring match_str 1 2))
+              )
+            (pcase char_str
+              ("n" "\n")
+              ("t" "\t")
+              ("r" "\r")
+              (_ char_str)
+              )))
+        text t t)
+      )
+
   ;; Form logic
   ;;
 
@@ -458,103 +453,33 @@
                     (RT-literal·describe-existing-form overlay_leftmost content_rightmost_right-neighbor)
                     )))))))))
 
-  ;; extent field as a first class citizen
-  ;;
-
-  (defun RT-literal·extent-remove (extent_pos extent-field-right-neighbor_pos)
-    (delete-region extent_pos extent-field-right-neighbor_pos)
-    )
-
-  (defun RT-literal·extent-insert (extent_pos extent)
-    (when (> extent 0)
-      (save-excursion
-        (goto-char extent_pos)
-        (insert (format "%X " extent))
-        )))
-
-  (defun RT-literal·extent-update (extent_pos extent-field-right-neighbor_pos extent)
-    (RT-literal·extent-remove extent_pos extent-field-right-neighbor_pos)
-    (RT-literal·extent-insert extent_pos extent)
-    )
-
-  (defun RT-literal·extent-hide (extent_pos extent-field-right-neighbor_pos)
-    (let 
-      (
-        (hide-overlay (make-overlay extent_pos extent-field-right-neighbor_pos nil nil nil))
-        )
-      (overlay-put hide-overlay 'invisible t)
-      (overlay-put hide-overlay 'RT-literal·is-hidden-extent_bool t)
-      ))
-
-  (defun RT-literal·extent-show (extent_pos)
-    (let 
-      (
-        (overlay_list (overlays-at extent_pos))
-        )
-      (dolist (overlay overlay_list)
-        (when (overlay-get overlay 'RT-literal·is-hidden-extent_bool)
-          (delete-overlay overlay)
-          ))))
-
-  ;; verifies boundaries; exits dynamically nested contexts if cursor leaves bounds
-  (defun RT-literal·boundary-check ()
-    (unless (RT-literal·overlay-stack-is-empty)
-      (let 
-        ( 
-          (current_pos (point)) 
-          )
-        (while 
-          (and 
-            (not (RT-literal·overlay-stack-is-empty)) 
-            (let 
-              ( 
-                (top-overlay (RT-literal·stack-top RT-literal·overlay-stack)) 
-                )
-              (or 
-                (< current_pos (RT-literal·overlay_leftmost top-overlay)) 
-                (> current_pos (RT-literal·overlay_rightmost_right-neighbor top-overlay))
-                )))
-          (let 
-            (
-              (top-overlay (RT-literal·stack-top RT-literal·overlay-stack))
-              )
-            (RT-literal·editor·exit-no-pop top-overlay)
-            (RT-literal·stack-pop RT-literal·overlay-stack)
-            (if 
-              (RT-literal·overlay-stack-is-empty)
-              (progn
-                (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
-                (message "Literal mode deactivated.")
-                )))))))
-
   ;; Guard Logic
   ;;
 
   (defun RT-literal·editor·guard-modification (overlay after-p_bool modify_leftmost modify_rightmost_right-neighbor &optional length)
-    (unless inhibit-read-only
-      (unless after-p_bool
-        (let* (
-            (is-strict_bool (overlay-get overlay 'RT-literal·is-strict))
-            (overlay_leftmost (RT-literal·overlay_leftmost overlay))
-            (overlay_rightmost_right-neighbor (RT-literal·overlay_rightmost_right-neighbor overlay))
-            )
-          (if 
-            is-strict_bool
-            ;; Active edit mode: block modifications that touch the delimiters or extent field
-            (let 
-              (
-                (content_leftmost (overlay-get overlay 'RT-literal·content_leftmost))
-                (content_rightmost_right-neighbor (- overlay_rightmost_right-neighbor (length right-delimiter)))
-                )
-              (when 
-                (or (< modify_leftmost content_leftmost) (> modify_rightmost_right-neighbor content_rightmost_right-neighbor))
-                (user-error "RT-literal error: Protected tape boundary. Exit edit mode first.")
-                ))
-            ;; Sealed mode: block everything unless engulfing
-            (unless 
-              (and (<= modify_leftmost overlay_leftmost) (>= modify_rightmost_right-neighbor overlay_rightmost_right-neighbor))
-              (user-error "RT-literal error: Atomic tape. Select the entire literal to cut/delete.")
-              ))))))
+    (unless after-p_bool
+      (let* (
+          (is-strict_bool (overlay-get overlay 'RT-literal·is-strict))
+          (overlay_leftmost (RT-literal·overlay_leftmost overlay))
+          (overlay_rightmost_right-neighbor (RT-literal·overlay_rightmost_right-neighbor overlay))
+          )
+        (if 
+          is-strict_bool
+          ;; Active edit mode: block modifications that touch the delimiters or extent field
+          (let 
+            (
+              (content_leftmost (overlay-get overlay 'RT-literal·content_leftmost))
+              (content_rightmost_right-neighbor (- overlay_rightmost_right-neighbor (length right-delimiter)))
+              )
+            (when 
+              (or (< modify_leftmost content_leftmost) (> modify_rightmost_right-neighbor content_rightmost_right-neighbor))
+              (user-error "RT-literal error: Protected tape boundary. Exit edit mode first.")
+              ))
+          ;; Sealed mode: block everything unless engulfing
+          (unless 
+            (and (<= modify_leftmost overlay_leftmost) (>= modify_rightmost_right-neighbor overlay_rightmost_right-neighbor))
+            (user-error "RT-literal error: Atomic tape. Select the entire literal to cut/delete.")
+            )))))
 
   (defun RT-literal·editor·lock-overlay (overlay is-strict_bool)
     (overlay-put overlay 'RT-literal·is-strict is-strict_bool)
@@ -566,8 +491,9 @@
     (overlay-put overlay 'modification-hooks nil)
     )
 
-  ;; conversion to extent-literal
+  ;; Internal wrapper logic
   ;;
+
   (defun RT-literal·editor·execute-wrap (payload_str start_pos end_pos msg_str)
     (let 
       (
@@ -594,57 +520,127 @@
             (overlay-put overlay 'RT-literal t)
             (overlay-put overlay 'RT-literal·content_leftmost (copy-marker content_leftmost))
             (RT-literal·editor·lock-overlay overlay nil)
+            (RT-literal·apply-visibility overlay)
+            (RT-literal·apply-display-wrap overlay)
             (deactivate-mark)
             (message msg_str)
             )))))
 
-;;;------------------------------------------------------------------------------
-;;; Interactive Interface
-;;;
+  ;; Display Indent (Wrap Prefix)
+  ;;
 
-  (defun RT-literal·teardown ()
-    "Completely removes RT-literal functionality, locks, and visuals from the current buffer."
-    (while (not (RT-literal·overlay-stack-is-empty))
-      (RT-literal·editor·abort)
-      )
-    (remove-overlays (point-min) (point-max) 'RT-literal t)
-    (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
-    (setq RT-literal·selected-overlay nil)
-    )
+  (defun RT-literal·apply-display-wrap (overlay)
+    (if 
+      (not RT-literal·display-wrap-enabled)
+      (overlay-put overlay 'wrap-prefix nil)
+      (let* (
+          (start_pos (RT-literal·overlay_leftmost overlay))
+          (col_num 
+            (save-excursion
+              (goto-char start_pos)
+              (current-column)
+              ))
+          (total-indent (+ col_num RT-literal·display-wrap-offset))
+          (prefix_str (make-string total-indent ?\s))
+          )
+        (overlay-put overlay 'wrap-prefix prefix_str)
+        )))
 
-  (defun RT-literal·teardown_cmd ()
+  (defun RT-literal·set-display-wrap-all (enable_bool offset_num)
+    (setq RT-literal·display-wrap-enabled enable_bool)
+    (setq RT-literal·display-wrap-offset offset_num)
+    (let 
+      (
+        (overlays_list (overlays-in (point-min) (point-max)))
+        )
+      (dolist (ov overlays_list)
+        (when (overlay-get ov 'RT-literal)
+          (RT-literal·apply-display-wrap ov)
+          ))))
+
+  ;; extent field visibility
+  ;;
+
+  (defun RT-literal·apply-visibility (overlay)
+    (let 
+      (
+        (hide-ov (overlay-get overlay 'RT-literal·hide-overlay))
+        (extent_start (+ (RT-literal·overlay_leftmost overlay) (length left-delimiter)))
+        (extent_end (marker-position (overlay-get overlay 'RT-literal·content_leftmost)))
+        )
+      (if 
+        (= extent_start extent_end)
+        ;; Null literal, nothing to hide
+        (when hide-ov
+          (delete-overlay hide-ov)
+          (overlay-put overlay 'RT-literal·hide-overlay nil)
+          )
+        (if 
+          RT-literal·hide-extent
+          (if 
+            (not hide-ov)
+            (let 
+              (
+                (new-ov (make-overlay extent_start extent_end nil nil nil))
+                )
+              (overlay-put new-ov 'invisible t)
+              (overlay-put new-ov 'evaporate t)
+              (overlay-put new-ov 'RT-literal·is-hide-overlay t)
+              (overlay-put overlay 'RT-literal·hide-overlay new-ov)
+              )
+            (move-overlay hide-ov extent_start extent_end)
+            )
+          (when hide-ov
+            (delete-overlay hide-ov)
+            (overlay-put overlay 'RT-literal·hide-overlay nil)
+            )))))
+
+  (defun RT-literal·set-extent-field-visibility-all (hide_bool)
+    (setq RT-literal·hide-extent hide_bool)
+    (let 
+      (
+        (overlays_list (overlays-in (point-min) (point-max)))
+        )
+      (dolist (ov overlays_list)
+        (when (overlay-get ov 'RT-literal)
+          (RT-literal·apply-visibility ov)
+          ))))
+
+  ;; Edit Mode Shield
+  ;;
+
+  (defun RT-literal·insert-newline ()
+    "Inserts a raw newline character, bypassing language formatting."
     (interactive)
-    (RT-literal·teardown)
-    (message "RT-literal·teardown complete. All extent-liters should now be clear text. RT-literal·scan-buffer_cmd to rescan the buffer, or if it is auto-scan hooked, reload it.")
+    (insert "\n")
     )
 
-  (defun RT-literal·nuke-zombies ()
-    "Aggressively purges test overlays from the buffer."
-    (remove-overlays (point-min) (point-max) 'RT-literal t)
-    (remove-overlays (point-min) (point-max) 'read-only t)
-    (remove-overlays (point-min) (point-max) 'left-prot t)
-    (remove-overlays (point-min) (point-max) 'right-prot t)
-    (message "Zombie overlays cleared. Ready for clean testing.")
-    )
-
-  (defun RT-literal·nuke-zombies_cmd ()
+  (defun RT-literal·insert-tab ()
+    "Inserts a raw tab character, bypassing language formatting."
     (interactive)
-    (RT-literal·nuke-zombies)
-    (message "RT-literal·editor·nuke-zombies complete, all overlays should be gone.")
+    (insert "\t")
     )
 
-
-  (defun RT-literal·disable-auto-scan ()
-    (dolist (hook_sym RT-literal·target-mode-hooks_list)
-      (remove-hook hook_sym 'RT-literal·scan-buffer)
+  (defvar RT-literal-edit-mode-map
+    (let 
+      (
+        (map (make-sparse-keymap))
+        )
+      (define-key map (kbd "RET") 'RT-literal·insert-newline)
+      (define-key map (kbd "TAB") 'RT-literal·insert-tab)
+      map
       ))
 
-  (defun RT-literal·disable-auto-scan_cmd ()
-    "Removes the auto-scan hook from all targeted major modes."
-    (interactive)
-    (RT-literal·disable-auto-scan)
-    (message "RT-literal auto-scan disabled globally.")
+  (define-minor-mode RT-literal-edit-mode
+    "Minor mode active while editing an RT-literal to prevent auto-formatting."
+    :init-value nil
+    :lighter " RT-Edit"
+    :keymap RT-literal-edit-mode-map
     )
+
+;;;------------------------------------------------------------------------------
+;;; Interface (API)
+;;;
 
   (defun RT-literal·editor·make ()
     (let 
@@ -664,13 +660,9 @@
         (RT-literal·stack-push RT-literal·overlay-stack overlay)
         (backward-char (length right-delimiter))
         (add-hook 'post-command-hook 'RT-literal·boundary-check nil t)
+        (RT-literal-edit-mode 1)
         (message "New literal mode active. Type content and exit.")
         )))
-
-  (defun RT-literal·editor·make_cmd ()
-    (interactive)
-    (RT-literal·editor·make)
-    )
 
   (defun RT-literal·editor·select-cycle ()
     (let* (
@@ -718,11 +710,6 @@
                   (message "Next literal selected.")
                   ))))))))
 
-    (defun RT-literal·editor·select-cycle_cmd ()
-    (interactive)
-    (RT-literal·editor·select-cycle)
-    )
-
   (defun RT-literal·editor·edit ()
     (if 
       (not (and RT-literal·selected-overlay (memq RT-literal·selected-overlay (overlays-at (point)))))
@@ -754,14 +741,9 @@
               )
             (RT-literal·stack-push RT-literal·overlay-stack target-overlay)
             (add-hook 'post-command-hook 'RT-literal·boundary-check nil t)
+            (RT-literal-edit-mode 1)
             (message "Literal mode active. Type content and exit.")
             )))))
-
-
-  (defun RT-literal·editor·edit_cmd ()
-    (interactive)
-    (RT-literal·editor·edit)
-    )
 
   ;; Returns 't' if successful, 'nil' if the form has an error.
   (defun RT-literal·editor·exit-no-pop (top-overlay)
@@ -796,24 +778,30 @@
                 (
                   (inhibit-read-only t)
                   )
+                (RT-literal·editor·unlock-overlay top-overlay)
                 (delete-region inner_leftmost content_rightmost_right-neighbor)
                 (if 
                   (> (length payload_str) 0)
-                  (let 
-                    (
+                  (let* (
                       (extent (- (RT-literal·string-byte_count payload_str) 1))
+                      (extent-field_str (format "%X " extent))
                       )
                     (save-excursion
                       (goto-char inner_leftmost)
-                      (insert (format "%X " extent))
+                      (insert extent-field_str)
                       (insert payload_str)
-                      )))
+                      )
+                    (set-marker content_leftmost_marker (+ inner_leftmost (length extent-field_str)))
+                    )
+                  (set-marker content_leftmost_marker inner_leftmost)
+                  )
                 (overlay-put top-overlay 'is-new nil)
                 (RT-literal·editor·lock-overlay top-overlay nil)
                 (overlay-put top-overlay 'face nil)
+                (RT-literal·apply-visibility top-overlay)
+                (RT-literal·apply-display-wrap top-overlay)
                 t
                 )))))))
-
 
   (defun RT-literal·editor·exit ()
     (if 
@@ -832,17 +820,13 @@
             (RT-literal·stack-pop RT-literal·overlay-stack)
             (if 
               (RT-literal·overlay-stack-is-empty)
-              (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
-              )
+              (progn
+                (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
+                (RT-literal-edit-mode -1)
+                ))
             (goto-char final-cursor_pos)
             (message "Literal sealed and exited.")
             )))))
-
-
-  (defun RT-literal·editor·exit_cmd ()
-    (interactive)
-    (RT-literal·editor·exit)
-    )
 
   (defun RT-literal·editor·abort ()
     (if 
@@ -852,6 +836,7 @@
         (
           (top-overlay (RT-literal·stack-top RT-literal·overlay-stack))
           )
+        (RT-literal·editor·unlock-overlay top-overlay)
         (let
           (
             (inhibit-read-only t)
@@ -866,24 +851,53 @@
               (delete-overlay top-overlay)
               )
             (progn
-              (RT-literal·editor·lock-overlay top-overlay nil)
               (overlay-put top-overlay 'face nil)
               ))
           (RT-literal·stack-pop RT-literal·overlay-stack)
           (if 
             (RT-literal·overlay-stack-is-empty)
-            (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
-            )
+            (progn
+              (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
+              (RT-literal-edit-mode -1)
+              ))
           (message "Literal editing aborted.")
           ))))
 
-  (defun RT-literal·editor·abort_cmd ()
-    (interactive)
-    (RT-literal·editor·abort)
-    )
+  ;; verifies boundaries; exits dynamically nested contexts if cursor leaves bounds
+  (defun RT-literal·boundary-check ()
+    (unless (RT-literal·overlay-stack-is-empty)
+      (let 
+        ( 
+          (current_pos (point)) 
+          )
+        (while 
+          (and 
+            (not (RT-literal·overlay-stack-is-empty)) 
+            (let 
+              ( 
+                (top-overlay (RT-literal·stack-top RT-literal·overlay-stack)) 
+                )
+              (or 
+                (< current_pos (RT-literal·overlay_leftmost top-overlay)) 
+                (> current_pos (RT-literal·overlay_rightmost_right-neighbor top-overlay))
+                )))
+          (let 
+            (
+              (top-overlay (RT-literal·stack-top RT-literal·overlay-stack))
+              )
+            (RT-literal·editor·exit-no-pop top-overlay)
+            (RT-literal·stack-pop RT-literal·overlay-stack)
+            (if 
+              (RT-literal·overlay-stack-is-empty)
+              (progn
+                (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
+                (RT-literal-edit-mode -1)
+                (message "Literal mode deactivated.")
+                )))))))
 
   (defun RT-literal·scan-buffer ()
     (remove-overlays (point-min) (point-max) 'RT-literal t)
+    (remove-overlays (point-min) (point-max) 'RT-literal·is-hide-overlay t)
     (let 
       (
         (overlay-stack nil)
@@ -928,24 +942,35 @@
                         ))
                     (goto-char content_leftmost)
                     )))))))
-
       (while overlay-stack
         (let 
           (
             (overlay (RT-literal·stack-pop overlay-stack))
             )
           (RT-literal·editor·lock-overlay overlay nil)
+          (RT-literal·apply-visibility overlay)
+          (RT-literal·apply-display-wrap overlay)
           ))))
 
-
-  (defun RT-literal·scan-buffer_cmd ()
-    "Scans the buffer for valid extent literals, applying read-only overlays."
-    (interactive)
-    (RT-literal·scan-buffer)
-    (message "Buffer scanned and extent literals sealed.")
+  (defun RT-literal·teardown ()
+    (while (not (RT-literal·overlay-stack-is-empty))
+      (RT-literal·editor·abort)
+      )
+    (remove-overlays (point-min) (point-max) 'RT-literal t)
+    (remove-overlays (point-min) (point-max) 'RT-literal·is-hide-overlay t)
+    (remove-hook 'post-command-hook 'RT-literal·boundary-check t)
+    (setq RT-literal·selected-overlay nil)
     )
 
-  (defun RT-literal·editor·quote-region ()
+  (defun RT-literal·nuke-zombies ()
+    (remove-overlays (point-min) (point-max) 'RT-literal t)
+    (remove-overlays (point-min) (point-max) 'RT-literal·is-hide-overlay t)
+    (remove-overlays (point-min) (point-max) 'read-only t)
+    (remove-overlays (point-min) (point-max) 'left-prot t)
+    (remove-overlays (point-min) (point-max) 'right-prot t)
+    )
+
+  (defun RT-literal·quote-region ()
     (if 
       (not (use-region-p))
       (user-error "RT-literal error: No active region to quote.")
@@ -957,13 +982,7 @@
         (RT-literal·editor·execute-wrap raw_str start_pos end_pos "Region wrapped into sealed extent literal.")
         )))
 
-  (defun RT-literal·editor·quote-region_cmd ()
-    "Converts an active region of raw text into a sealed extent literal."
-    (interactive)
-    (RT-literal·editor·quote-region)
-    )
-
-  (defun RT-literal·editor·convert-region ()
+  (defun RT-literal·convert-region ()
     (if 
       (not (use-region-p))
       (user-error "RT-literal error: No active region to convert.")
@@ -977,16 +996,120 @@
         (RT-literal·editor·execute-wrap payload_str start_pos end_pos "Region converted and sealed as extent literal.")
         )))
 
-  (defun RT-literal·editor·convert-region_cmd ()
-    "Strips outer quotes, unescapes characters, and converts region into a sealed extent literal."
+  (defun RT-literal·disable-auto-scan ()
+    (dolist (hook_sym RT-literal·target-mode-hooks_list)
+      (remove-hook hook_sym 'RT-literal·scan-buffer)
+      ))
+
+;;;------------------------------------------------------------------------------
+;;; Interactive (Commands)
+;;;
+
+  (defun RT-literal·editor·make_cmd ()
     (interactive)
-    (RT-literal·editor·convert-region)
+    (RT-literal·editor·make)
     )
 
+  (defun RT-literal·editor·select-cycle_cmd ()
+    (interactive)
+    (RT-literal·editor·select-cycle)
+    )
+
+  (defun RT-literal·editor·edit_cmd ()
+    (interactive)
+    (RT-literal·editor·edit)
+    )
+
+  (defun RT-literal·editor·exit_cmd ()
+    (interactive)
+    (RT-literal·editor·exit)
+    )
+
+  (defun RT-literal·editor·abort_cmd ()
+    (interactive)
+    (RT-literal·editor·abort)
+    )
+
+  (defun RT-literal·scan-buffer_cmd ()
+    "Scans the buffer for valid extent literals, applying read-only overlays."
+    (interactive)
+    (RT-literal·scan-buffer)
+    (message "Buffer scanned and extent literals sealed.")
+    )
+
+  (defun RT-literal·teardown_cmd ()
+    "Completely removes RT-literal functionality, locks, and visuals from the current buffer."
+    (interactive)
+    (RT-literal·teardown)
+    (message "RT-literal·teardown complete. All extent-liters should now be clear text. RT-literal·scan-buffer_cmd to rescan the buffer, or if it is auto-scan hooked, reload it.")
+    )
+
+  (defun RT-literal·nuke-zombies_cmd ()
+    "Aggressively purges test overlays from the buffer."
+    (interactive)
+    (RT-literal·nuke-zombies)
+    (message "RT-literal·nuke-zombies complete, all overlays should be gone.")
+    )
+
+  (defun RT-literal·quote-region_cmd ()
+    "Converts an active region of raw text into a sealed extent literal."
+    (interactive)
+    (RT-literal·quote-region)
+    )
+
+  (defun RT-literal·convert-region_cmd ()
+    "Strips outer quotes, unescapes characters, and converts region into a sealed extent literal."
+    (interactive)
+    (RT-literal·convert-region)
+    )
+
+  (defun RT-literal·extent-field-hide_cmd ()
+    "Explicitly hides the extent fields for all literals in the buffer."
+    (interactive)
+    (RT-literal·set-extent-field-visibility-all t)
+    (message "Extent fields hidden.")
+    )
+
+  (defun RT-literal·extent-field-show_cmd ()
+    "Explicitly shows the extent fields for all literals in the buffer."
+    (interactive)
+    (RT-literal·set-extent-field-visibility-all nil)
+    (message "Extent fields visible.")
+    )
+
+  (defun RT-literal·disable-auto-scan_cmd ()
+    "Removes the auto-scan hook from all targeted major modes."
+    (interactive)
+    (RT-literal·disable-auto-scan)
+    (message "RT-literal auto-scan disabled globally.")
+    )
+
+  (defun RT-literal·display-wrap-on_cmd (&optional prefix_arg)
+    "Enables display-only soft wrap indenting for extent literals."
+    (interactive "P")
+    (let 
+      (
+        (offset (if prefix_arg (prefix-numeric-value prefix_arg) 2))
+        )
+      (RT-literal·set-display-wrap-all t offset)
+      (message "Display wrap enabled with offset %d." offset)
+      ))
+
+  (defun RT-literal·display-wrap-off_cmd ()
+    "Disables display-only soft wrap indenting for extent literals."
+    (interactive)
+    (RT-literal·set-display-wrap-all nil 0)
+    (message "Display wrap disabled.")
+    )
 
 ;;;--------------------------------------------------------------------------------
-;;; integration
+;;; Integration
 ;;;
+
+  (defun RT-literal·enable-auto-scan ()
+    (dolist (hook_sym RT-literal·target-mode-hooks_list)
+      (add-hook hook_sym 'RT-literal·scan-buffer)
+      ))
 
   (RT-literal·enable-auto-scan)
 
@@ -995,16 +1118,18 @@
       (
         (map (make-sparse-keymap))
         )
-  
       (define-key map (kbd "m") 'RT-literal·editor·make_cmd)
       (define-key map (kbd "e") 'RT-literal·editor·edit_cmd)
       (define-key map (kbd "s") 'RT-literal·editor·select-cycle_cmd)
       (define-key map (kbd "a") 'RT-literal·editor·abort_cmd)
       (define-key map (kbd "x") 'RT-literal·editor·exit_cmd)
-    
-      (define-key map (kbd "q") 'RT-literal·editor·quote-region_cmd)
-      (define-key map (kbd "c") 'RT-literal·editor·convert-region_cmd)
-
+      (define-key map (kbd "q") 'RT-literal·quote-region_cmd)
+      (define-key map (kbd "c") 'RT-literal·convert-region_cmd)
+      ;; [o]ptions
+      (define-key map (kbd "o e 1") 'RT-literal·extent-field-show_cmd)
+      (define-key map (kbd "o e 0") 'RT-literal·extent-field-hide_cmd)
+      (define-key map (kbd "o i 1") 'RT-literal·display-wrap-on_cmd)
+      (define-key map (kbd "o i 0") 'RT-literal·display-wrap-off_cmd)
       map
       ))
 
