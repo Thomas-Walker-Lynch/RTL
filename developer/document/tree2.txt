@@ -33,9 +33,16 @@ In this manner three tiles can be used to encode anywhere from zero, to at most,
 
 Instead of adding the steps, suppose a different operation: we instead concatenate the bits in the tiles, then at the end read the collection as a single number, a sort of 'Lynch' addition:
 
-  1000 ⊕ 0110 ⊕  0001 ->  1000 0110 0001 = 2145 steps
+  1000 ⊕ 0110 ⊕  0001 ->  1000 0110 0001 msb at leftmost = 2145 steps
 
 With the method of concatenation, it is possible to encode anywhere from zero, to at most, 2^12 -1, 4095 steps. When more tiles are added the range increases exponentially with a maximum count of 2^(4 n) - 1.
+
+Note that in the above Lynch addition we assumed coding was Big Endian, i.e. with the msb first. Had the coding been in Little Endian, i.e. with the lsb first, we would get a different sum:
+
+  1000 ⊕ 0110 ⊕  0001 ->  1000 0110 0001 lsb at leftmost
+
+Which is the the same number, as I happened to big an example that is left right flipped symmeteric.  In general this will not be true.
+
 
 2. Tree
 

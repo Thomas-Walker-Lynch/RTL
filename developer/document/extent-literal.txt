@@ -1,156 +1,123 @@
-
-
 RT Extent Literal
 
-extent_literal:: <configuration><extension>*[<header>][<payload>]
+2. Endian Portability
 
-header:: <format>[<display>][extent]
+2.1 The Endian Wars
+
+The Little Endian model for Arabic Number Representation preserves the correlation between bit array index and the power of 2 weight of bits in a Natural Number.  Consequently for Little Endian:
+
+```
+n_LE = Sum[ 2^i,  {i, 0, extent}]
+```
+
+Here i is both the bit index into the bit array starting at the leftmost bit to be decoded, and the bit weight.
+
+In contrast, the Big Endian model for Arabic Number Representation flips the bit weight and the bit array index.  Consequently,
+
+```
+n_BE = Sum [ 2^{extent - i} ,{i, 0, extent}]
+```
+
+This reversal is due to an error made by European translators in the middle ages. Arabic numbers in Arabic writing appear as least significant digit first, i.e. Little Endian. For arithmetic this makes good sense because when adding numbers we start first with the least significant digit. However the Arabs also write from right to left. When European translators did not appreciate the details of performing arithmetic, so when they reversed the direction of writing letters, they did not reverse the direction of writing digits. Thus, Big Endian was invented in the 1300s, and it leaves mathematicians to do the reversal that the European translators neglected to do in 1300s.
+
+2.2 Constants and Registers
+
+Programmers conceptualize numeric constants in source code, and in processor registers, as having the rightmost bit as the MSB and leftmost bit being the LSB. I.e. as a Big Endian numbers.
+
+Consequently, on Little Endian machines the bit a person envisions in memory starting with index zero at the left, appears in the register at the rightmost position, the LSB position.  This reversal being due to registers being conceptualized as Big Endian. It follows that on Big Endian machines the bit that comes from the leftmost of the bit array, appears at the leftmost of the register, at the MSB position. However,
+
+So we have an interesting situation, Big Endian is mathematically flipped in blocks of bits, where the extent of the block must be known in order to perform the flip, while Little Endian is conceptually flipped due to how we conceptualize numbers as being written. Little wonder programmers find this confusing, and can sometime can be heard to say the situation is, "NUXI".
+
+The problem with Big Endian is structural, but the problem with Little Endian is purely conceptual. Hence we could fix the Little Endian problem by conceptualizing numbers with their LSB at the leftmost. However, what starts as a conceptual problem becomes a computing problem when compilers do not provide such facilities. We can add a helper function until compilers mend their ways, if ever.
+
+```
+left_to_right( 0xC012 ) -->  0x4803
+```
+
+2.3 The impossibility of general conversion
+
+Suppose we have two 32 bit words in memory that were written little endian.
+```
+a0 a1 b0 b1
+```
+
+Here `a0` is the least significant byte of the first word, and `b0` is the least significant byte of the second word.
+We can then use the function `flip bytes` which reverses each byte pair. Applying that we get:
+
+```
+a1 a0 b1 b0
+```
+
+This is a fine conversion to Big Endian.  Now let us pass a 64 bit word to the same conversion function.
+
+In little Endian:
+```
+d0 d1 d2 d3
+```
+
+Then converted:
+```
+d1 d0 d3 d2
+```
+
+This is missed up. The correct answer would be `d3 d2 d1 d0`.  What this example shows us is that to convert Little Endian to Big Endian requires knowing the program level type that is to be applied.  But given only the four bytes and the knowledge they were written on a little endian machine, we can not know which conversion algorithm to apply.  This same problem extrapolates to other scenarios and to conversion from Big Endian to Little Endian.
 
 
-1. configuration
+2. layer 0 format
 
-Fixed number of bits, per this specification.  Slash choices correspond to 1/0.
+  extent-literal:: (<control>+<tile>)*
+
+The extent-literal models data as a bit array, with the zero index bit being leftmost, the array extending to the right. The index of the rightmost bit is called the array's 'extent'.  It follows that an array of 1 bit has an extent of 0.
+
+When decoding an extent-literal the bit array is scanned from left to right, starting with the leftmost bit of the extent-literal.
+
+Control codes are variable length and are scanned from left to right. The leftmost bit of a tile, when the tile interpreted as an Arabic Representation of a Natural Number, is the LSB of the title. In this way if the tile is expanded on the right, its leading bits in a left to right scan remain the same.
+
+3. layer 1 format
+
+  extent_literal:: <configuration><extension>*
+
+  header:: ( <format> <display> ) <extent>
+
+  format:: c_enum
+  display: c_enum
+  extent:  c_natural_number
+
+  c_enum: ( tile* ) ; lynch summed
+  c_natural_number ( tile *) ; lynch summed
 
 Header is always DFS, 5 bit tile.
 
+Example formats include, unspecified, ASCII, code point, UTF8
 
-bits
-0    encoded in big endian/little endian
+Extensions are first order tile lists.
 
-1-2  version number
-3    more version number bits: yes/no
+  bits
 
-4    header present/absent  
-5    payload present/absent 
+  extent-literal version
+  0-1  version number
+  2    version extension follows: yes/no
 
-Note the header child extent
-   0  (format)  display defaults, extent absent due to absent or structured payload, otherwise an error
-   1  (format display>  extent absent due to absent or structured payload
-   2  (format display extent) full specification, though extent is extraneous if absent/structured payload
+  3    display selection follows / default
 
+  payload
 
-header | payload | 3 | 2 | 1 -> 
-  0        0      -> null literal
-  0        1      -> payload is structured, default format and display
-  0        0      -> message is a structured unsigned integer
-  0        1      -> default format, default display
-  1        0      -> null literal with format and display
-  1        1      -> structured payload
-  1        0      -> no EL structural interpretation - user defined?
-  1        1      -> normal case
+  4    big/little creation of contained data
+  5    tile size follows
+  6    format  selection follows / default
 
-if (extent == absent) && (payload == absent) ->  null literal
-if (extent == absent) && (payload == present) -> payload is structured
+  7,8 Payload control
 
-if payload is structured:
-  -> extent is not present
-  6  payload BFS/DFS
-  7  payload tile extent specified
+    00 tile array
+    01 first order list
+    10 DFS 
+    11 BFS 
 
-  
+  9,10 payload alignment
+     00 1  ; flows in bit stream
+     01 8  ; byte aligned
+     10 ?
+     11 alignment follows
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-================================================================================
-1. RT Lisp Comment Ontology
-The commenting style in this file is highly structured, using semicolon counts and indentation to create a clear visual hierarchy.
-
-The Prologue Block: Located at the very top of the document. It uses flush left triple semicolons ;;;. Empty triple semicolons act as vertical spacing to separate paragraphs without breaking the block format.
-
-The Architectural Banner: Used for major file divisions (like Utilities, Configuration, Implementation). It consists of flush left triple semicolons followed by a continuous line of dashes, a title line, and an empty triple semicolon line.
-
-The Scope Header: Used to group related variables or functions within a major section. These are indented two spaces, begin with double semicolons ;;, and are followed by an empty double semicolon line for vertical padding.
-
-The Contract Annotation: These are double semicolon comments indented two spaces, placed directly above a function definition. They specify preconditions, structural expectations, or size checks that must be true before the function is called.
-
-The Trailing Tag: A single semicolon ; placed at the end of a line of executable code, used here to label a specific return state or note a brief detail.
-
-2. Code Structure Attributes
-
-The code structure heavily applies the RT Code Format conventions to a Lisp environment, resulting in a distinct visual footprint.
-
-Global Two Space Offset: Unlike standard Emacs Lisp where top level forms like defun or setq are flush left, the entire configuration and implementation sections are indented by two spaces.
-
-Vertical Branching: The if statements are completely expanded vertically. The operator, the condition, the true branch, and the false branch each occupy their own isolated lines.
-
-Isolated Binding Blocks: In let and let* forms, the variable declaration list is pushed to its own level. The opening and closing parentheses for the binding list often sit alone on separate lines, visually boxing the variables.
-
-RT Typed Identifiers: The naming conventions perfectly map to your specifications for languages that support primary word separators. Hyphens separate conceptually related word groupings (like RT-literal-is-quoted-form), while underscores separated conceptual groups, for example semantic type suffixes (like _pos, _size, or _bool).
-
-Cascading Closures: Closing parentheses are frequently clustered at the end of a block ))), though some control structures drop their final parenthesis onto a new line aligned with the opening form.
-
------
-;;; TTCA Theory vs. Emacs:
-;;;
-;;; In TTCA, a tape is an array of cells. A tape has a leftmost cell and a rightmost cell. Hence rightmost_right-neighbor is one cell to the right of rightmost. A tape area is not guaranteed to have a rightmost_right-neighbor, but it will always have a rightmost. The index of the leftmost cell is conventionally 0, the index of the rightmost cell is called the tape's 'extent'.  
-;;;
-;;; In C programming culture terminology 'length' is a count of cells in an array (a kind of tape). Hence length is 1 plus extent, and can overflow an index register, whereas the 'extent' is an index, and defines the required bit size of an index register.  'size' in C culture programming convention had the meaning of a count of the underlying bytes, unless otherwise noted. When speaking of arrays of bytes, 'extent' is the maximum byte index.
-;;;
-;;;  In the context of this code, and when discussing counted literals, 'extent' refers to the byte extent.
-;;;
-;;; We also have a conflict in interpretation of 'position' between Emacs positions and TTCA theory indexes.  A tape (array) has cells, and an index (~ cursor position) indicates a cell.  Leftmost is then the leftmost cell, while rightmost is the rightmost cell.  
-;;;
-;;; Note: By contract, size checks ensure quotes do not overlap.
-
-del - delete cell under cursor
-back space - delete left neighbor cell
-typing a letter - insert new left neighbor cell initialized with letter as contents
-
-
-
-
------
-
-In general, assume the user can read code, so don't add comments that are merely the code that follows translated to English.
-
----------------
-
-Draft Description for the Format Guide
-Contiguous Form Cluster
-
-When a single logical operation or concept requires multiple distinct Lisp forms to implement (such as a status list, a side-effect message router, and a primary worker function), these forms are grouped directly beneath a single shared comment block with zero intervening blank lines.
-
-Key Characteristics:
-
-Shared Contract: The preceding double-semicolon (;;) comment block acts as the overarching contract, documenting the preconditions and context for all immediately following contiguous forms.
-
-Visual Binding: The absence of vertical whitespace visually binds the separate definitions into a single, cohesive unit. A reader instantly recognizes that these functions and variables are inextricably linked and should be read as a group.
-
-Separation of Concerns without Fragmentation: This technique allows the programmer to maintain strict architectural separation (e.g., isolating I/O side effects from pure mathematical logic) without scattering the related code across the file.
-
-Example:
-
-Code snippet
-  ;; By contract: only called when overlay is in quoted form, and null string case already handled
-  ;; Everything from content_leftmost to content_rightmost is data, inclusive.
-  (setq RT-literal·describe-new-form_status (list 'new-good))
-  (defun RT-literal·describe-new-form_message (status)
-    nil
-    )
-  (defun RT-literal·describe-new-form (overlay_leftmost content_rightmost_right-neighbor)
-    (let*
-      ( ... )
-      ...
-      ))
-"Contiguous Form Cluster" fits well with the existing RT nomenclature (like "Isolated Binding Blocks" and "Cascading Closures").
-
-LocalWords:  endian
