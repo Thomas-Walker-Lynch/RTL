@@ -1,3 +1,76 @@
+
+
+RT Extent Literal
+
+extent_literal:: <configuration><extension>*[<header>][<payload>]
+
+header:: <format>[<display>][extent]
+
+
+1. configuration
+
+Fixed number of bits, per this specification.  Slash choices correspond to 1/0.
+
+Header is always DFS, 5 bit tile.
+
+
+bits
+0    encoded in big endian/little endian
+
+1-2  version number
+3    more version number bits: yes/no
+
+4    header present/absent  
+5    payload present/absent 
+
+Note the header child extent
+   0  (format)  display defaults, extent absent due to absent or structured payload, otherwise an error
+   1  (format display>  extent absent due to absent or structured payload
+   2  (format display extent) full specification, though extent is extraneous if absent/structured payload
+
+
+header | payload | 3 | 2 | 1 -> 
+  0        0      -> null literal
+  0        1      -> payload is structured, default format and display
+  0        0      -> message is a structured unsigned integer
+  0        1      -> default format, default display
+  1        0      -> null literal with format and display
+  1        1      -> structured payload
+  1        0      -> no EL structural interpretation - user defined?
+  1        1      -> normal case
+
+if (extent == absent) && (payload == absent) ->  null literal
+if (extent == absent) && (payload == present) -> payload is structured
+
+if payload is structured:
+  -> extent is not present
+  6  payload BFS/DFS
+  7  payload tile extent specified
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+================================================================================
 1. RT Lisp Comment Ontology
 The commenting style in this file is highly structured, using semicolon counts and indentation to create a clear visual hierarchy.
 
@@ -79,3 +152,5 @@ Code snippet
       ...
       ))
 "Contiguous Form Cluster" fits well with the existing RT nomenclature (like "Isolated Binding Blocks" and "Cascading Closures").
+
+LocalWords:  endian

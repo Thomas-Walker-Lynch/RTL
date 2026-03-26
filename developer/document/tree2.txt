@@ -1,0 +1,176 @@
+Controlled Data
+
+1. First order list
+
+1.1 The theory of it
+
+For a first order list to exist, there must be at least one member.
+
+If a higher order structure maintains the concept of the list, a state variable can be used to note if the list exists, i.e. has an implementation or not. This defines the concept of an 'empty' list.
+
+1.2 Implementation
+
+A first order list of tiles can be controlled with a Boolean flag.
+
+  (<control><tile>)*
+
+Such an encoding would be decoded while scanning from left to right.
+
+As an example, consider that a control bit is used to control the list, and when this bit is zero, another <control><tile> pair is found to the right of the current pair, but when it is 1, another pair is not found to the right.  This '1' is then called the terminator.
+
+
+1.3 Accumulating an Arabic encoded Natural Number.
+
+Suppose the list of tiles was controlling an index or a count, say for example, the number of steps a person takes when jogging.
+
+Consider then, with a 4 bit tile:  `0 1000 0 0110  1 0001`
+
+This could be interpreted to say, the person took 8 steps, then took 6 steps, then terminated his job after taking one additional step. Then by adding we find the total number of steps:
+
+  1000 + 0110 + 0001 = 15 steps
+
+In this manner three tiles can be used to encode anywhere from zero, to at most, 15 x 3, 45 steps. When more tiles are added to the sequence the range increases linearly with a maximum count of 15 n, where n is the number of tiles.
+
+Instead of adding the steps, suppose a different operation: we instead concatenate the bits in the tiles, then at the end read the collection as a single number, a sort of 'Lynch' addition:
+
+  1000 ⊕ 0110 ⊕  0001 ->  1000 0110 0001 = 2145 steps
+
+With the method of concatenation, it is possible to encode anywhere from zero, to at most, 2^12 -1, 4095 steps. When more tiles are added the range increases exponentially with a maximum count of 2^(4 n) - 1.
+
+2. Tree
+
+2.1. Layer 1, command and tiles
+
+The bit array is formatted as a sequence of commands, some of which take a tile argument.
+
+  tree:: (<command>[<tile>])+
+
+A command schema is an immutable property of this specification document. To change the schema would be to create a different specification.
+
+The tile extent is a static property of the tree. It can be configured before the tree is created, and then will not be changed during the life of the tree.
+
+2.2 Command schema
+
+A given tree is 'encoded' by writing down a set of commands and tile values, that when replayed, explain to the reader how to build a copy of the given tree.
+
+Such an encoding is then 'decoded' by executing the commands, resulting in a copy of the tree being built.
+
+Decoding is done while reading the bit array from left to right, i.e. starting with bit index 0. When there is an argument, it will be a fixed sized tile, and an such tile will appear immediately after the control.
+
+
+2.2.1 Depth First schema
+
+d0.  Initialization: push empty list
+
+d1.  stream until stack becomes empty
+
+  encoding | command steps
+    0      | stack.top().append(ti) ; tile argument
+  100      | stack.top().append(empty), stack.push(empty) ; no argument
+  101      | stack.pop() ; no argument
+  110      | N x (stack.top().append(empty), stack.push(empty)) ; tile argument gives N
+  111      | N x stack.pop()  ; tile argument gives N
+
+When multiple 110 or 111 control codes are used in succession, Lynch addition is used to find the total number of push or pop operations to be performed.
+
+d2. End of Tree, EoT, when pop makes stack empty
+
+
+Example: (a (b c d (e f g)) h)
+
+             a . h
+              /
+         b  c  d .
+                /
+             e f  g
+
+
+Stream     stack.top()       stack          Action
+-------    --------------    ----------     -------------------------
+[Init]     ()                ( () )         Init stack with empty list.
+[0 a]      (a)               ( (a) )        Append tile a.
+[100]      ()                ( () (a ()) )  Append empty list to root, push it to stack.
+[0 b]      (b)               ( (b) (a ...) ) Append tile b to active list.
+[0 c]      (b c)             ( (b c) (a ...) ) Append tile c.
+[0 d]      (b c d)           ( (b c d) (a ...) ) Append tile d.
+[100]      ()                ( () (b c d ()) (a ...) ) Append empty list to active, push it.
+[0 e]      (e)               ( (e) (b c d ...) (a ...) ) Append tile e.
+[0 f]      (e f)             ( (e f) (b c d ...) (a ...) ) Append tile f.
+[0 g]      (e f g)           ( (e f g) (b c d ...) (a ...) ) Append tile g.
+[101]      (b c d (e f g))   ( (b c d (e f g)) (a ...) ) Pop stack. Active is now parent list.
+[101]      (a (b c d ...))   ( (a (b c d ...)) ) Pop stack. Active is now root list.
+[0 h]      (a (b...) h)      ( (a (b...) h) ) Append tile h to root.
+[101]      empty             empty          Pop stack. EoT.
+
+5 x 3 + 8 x 1 = 22 bits of control.  If each tile is 5 bits, then 8 * 5 bits, 40 bits of data.  62 bits total.
+
+    22
+  -----     = 35% spent on control
+    62
+
+Pathological Regression Tests (DFS)
+
+Test 1: The "Trapped Unwind" fix -> (a (b))
+Stream     stack.top()       stack          Action
+-------    --------------    ----------     -------------------------
+[Init]     ()                ( () )         Init stack with empty list.
+[0 a]      (a)               ( (a) )        Append tile a.
+[100]      ()                ( () (a ()) )  Append empty list to root, push it.
+[0 b]      (b)               ( (b) (a (b)) ) Append tile b.
+[101]      (a (b))           ( (a (b)) )    Pop stack. Active is root. No phantom tile needed!
+[101]      empty             empty          Pop stack. EoT.
+
+Test 2: The Deep Root fix -> ((a))
+Stream     stack.top()       stack          Action
+-------    --------------    ----------     -------------------------
+[Init]     ()                ( () )         Init stack with empty list.
+[100]      ()                ( () ( () ) )  Append empty list to root, push it.
+[0 a]      (a)               ( (a) ( (a) ) ) Append tile a.
+[111 2]    empty             empty          Pop stack 2 times. EoT.
+
+
+2.2.2 Breadth First schema
+
+s0. Initialize: empty list placed on the front of the queue
+
+s1. successively apply commands:
+
+  encoding | command steps
+    0      | queue.front().append(ti) ; tile argument
+  100      | queue.front().append(empty), queue.enqueue(empty) ; no argument
+  101      | queue.dequeue() ; no argument
+  110      | N x (queue.front().append(empty), queue.enqueue(empty)) ; tile argument gives N
+  111      | N x queue.dequeue() ; tile argument gives N
+
+When multiple 110 or 111 control codes are used in succession, Lynch addition is used to find the total number of queue, or dequeue operations to perform.
+
+s2. End of Tree, EoT, when dequeue would make the queue empty
+
+Example: (a (b c d (e f g)) h)
+
+             a . h
+              /
+         b  c  d .
+                /
+             e f  g
+
+Stream     queue.front()     queue               Action
+-------    --------------    ---------------     -------------------------
+[Init]     ()                [ () ]              Init queue with empty list.
+[0 a]      (a)               [ (a) ]             Append tile a.
+[100]      (a ())            [ (a ()) , () ]     Append empty list to active, enqueue it for later.
+[0 h]      (a () h)          [ (a () h) , () ]   Append tile h to active list.
+[101]      ()                [ () ]              Dequeue root. Next active is the child list.
+[0 b]      (b)               [ (b) ]             Append tile b.
+[0 c]      (b c)             [ (b c) ]           Append tile c.
+[0 d]      (b c d)           [ (b c d) ]         Append tile d.
+[100]      (b c d ())        [ (b c d ()) , () ] Append empty list, enqueue it.
+[101]      ()                [ () ]              Dequeue. Next active is the inner child list.
+[0 e]      (e)               [ (e) ]             Append tile e.
+[0 f]      (e f)             [ (e f) ]           Append tile f.
+[0 g]      (e f g)           [ (e f g) ]         Append tile g.
+[101]      empty             empty               Dequeue. Queue is empty. EoT.
+
+
+Again with 5 bit tiles, there are 40 bits of data.  For control, there are 8 x 1 + 5 * 3 = 22 bits of control. So again 62 bits total, and 35% being control overhead.
+
