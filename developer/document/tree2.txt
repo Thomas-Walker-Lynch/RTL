@@ -18,30 +18,31 @@ Such an encoding would be decoded while scanning from left to right.
 
 As an example, consider that a control bit is used to control the list, and when this bit is zero, another <control><tile> pair is found to the right of the current pair, but when it is 1, another pair is not found to the right.  This '1' is then called the terminator.
 
+A singleton list when then have a terminator followed by the single tile.
 
 1.3 Accumulating an Arabic encoded Natural Number.
 
 Suppose the list of tiles was controlling an index or a count, say for example, the number of steps a person takes when jogging.
 
-Consider then, with a 4 bit tile:  `0 1000 0 0110  1 0001`
+Consider then, with a 4 bit tile:  `0 1100 0 0011  1 1010`
 
-This could be interpreted to say, the person took 8 steps, then took 6 steps, then terminated his job after taking one additional step. Then by adding we find the total number of steps:
+This could be interpreted to say, the person took 12 steps, then took 3 steps, then terminated his jog after taking 10 additional steps. Then by adding we find the total number of steps:
 
-  1000 + 0110 + 0001 = 15 steps
+  1100 + 0011 + 1010 = 25 steps
 
-In this manner three tiles can be used to encode anywhere from zero, to at most, 15 x 3, 45 steps. When more tiles are added to the sequence the range increases linearly with a maximum count of 15 n, where n is the number of tiles.
+In this manner three tiles can be used to encode anywhere from zero, to at most, 15 × 3, 45 steps. When more tiles are added to the sequence the range increases linearly with a maximum count of 15n, where n is the number of tiles.
 
 Instead of adding the steps, suppose a different operation: we instead concatenate the bits in the tiles, then at the end read the collection as a single number, a sort of 'Lynch' addition:
 
-  1000 ⊕ 0110 ⊕  0001 ->  1000 0110 0001 msb at leftmost = 2145 steps
+  1100 ⊕ 0011 ⊕ 1010 -> 1100 0011 1010 msb at leftmost = 3130 steps
 
-With the method of concatenation, it is possible to encode anywhere from zero, to at most, 2^12 -1, 4095 steps. When more tiles are added the range increases exponentially with a maximum count of 2^(4 n) - 1.
+With the method of concatenation, it is possible to encode anywhere from zero, to at most, 2¹² - 1, 4095 steps. When more tiles are added the range increases exponentially with a maximum count of 2⁴ⁿ - 1.
 
-Note that in the above Lynch addition we assumed coding was Big Endian, i.e. with the msb first. Had the coding been in Little Endian, i.e. with the lsb first, we would get a different sum:
+Note that in the above Lynch addition we assumed coding was Big Endian, i.e. with the msb first. Had the coding been in Little Endian, i.e. with the lsb first, we would get a different sum, as the entire bit sequence is flipped left to right:
 
-  1000 ⊕ 0110 ⊕  0001 ->  1000 0110 0001 lsb at leftmost
+  1100 ⊕ 0011 ⊕ 1010 -> 0101 1100 0011 lsb at leftmost = 1475 steps
 
-Which is the the same number, as I happened to big an example that is left right flipped symmeteric.  In general this will not be true.
+Which evaluates to a completely different number, since the sequence is not left right flipped symmetric.
 
 
 2. Tree
@@ -62,7 +63,7 @@ A given tree is 'encoded' by writing down a set of commands and tile values, tha
 
 Such an encoding is then 'decoded' by executing the commands, resulting in a copy of the tree being built.
 
-Decoding is done while reading the bit array from left to right, i.e. starting with bit index 0. When there is an argument, it will be a fixed sized tile, and an such tile will appear immediately after the control.
+Decoding is done while reading the bit array from left to right, i.e. starting with bit index 0. When there is an argument, it will be a fixed sized tile, and any such tile will appear immediately after the control.
 
 
 2.2.1 Depth First schema
@@ -75,8 +76,8 @@ d1.  stream until stack becomes empty
     0      | stack.top().append(ti) ; tile argument
   100      | stack.top().append(empty), stack.push(empty) ; no argument
   101      | stack.pop() ; no argument
-  110      | N x (stack.top().append(empty), stack.push(empty)) ; tile argument gives N
-  111      | N x stack.pop()  ; tile argument gives N
+  110      | N × (stack.top().append(empty), stack.push(empty)) ; tile argument gives N
+  111      | N × stack.pop()  ; tile argument gives N
 
 When multiple 110 or 111 control codes are used in succession, Lynch addition is used to find the total number of push or pop operations to be performed.
 
@@ -92,11 +93,11 @@ Example: (a (b c d (e f g)) h)
              e f  g
 
 
-Stream     stack.top()       stack          Action
--------    --------------    ----------     -------------------------
-[Init]     ()                ( () )         Init stack with empty list.
-[0 a]      (a)               ( (a) )        Append tile a.
-[100]      ()                ( () (a ()) )  Append empty list to root, push it to stack.
+Stream     stack.top()       stack           Action
+-------    --------------    ----------      -------------------------
+[Init]     ()                ( () )          Init stack with empty list.
+[0 a]      (a)               ( (a) )         Append tile a.
+[100]      ()                ( () (a ()) )   Append empty list to root, push it to stack.
 [0 b]      (b)               ( (b) (a ...) ) Append tile b to active list.
 [0 c]      (b c)             ( (b c) (a ...) ) Append tile c.
 [0 d]      (b c d)           ( (b c d) (a ...) ) Append tile d.
@@ -109,29 +110,31 @@ Stream     stack.top()       stack          Action
 [0 h]      (a (b...) h)      ( (a (b...) h) ) Append tile h to root.
 [101]      empty             empty          Pop stack. EoT.
 
-5 x 3 + 8 x 1 = 22 bits of control.  If each tile is 5 bits, then 8 * 5 bits, 40 bits of data.  62 bits total.
+5 × 3 + 8 × 1 = 22 bits of control. If each tile is 5 bits, then 8 × 5 bits, 40 bits of data. 62 bits total.
 
     22
   -----     = 35% spent on control
     62
 
+Given the short lists, and the small tiles, this is a good result.
+
 Pathological Regression Tests (DFS)
 
 Test 1: The "Trapped Unwind" fix -> (a (b))
-Stream     stack.top()       stack          Action
--------    --------------    ----------     -------------------------
-[Init]     ()                ( () )         Init stack with empty list.
-[0 a]      (a)               ( (a) )        Append tile a.
-[100]      ()                ( () (a ()) )  Append empty list to root, push it.
+Stream     stack.top()       stack           Action
+-------    --------------    ----------      -------------------------
+[Init]     ()                ( () )          Init stack with empty list.
+[0 a]      (a)               ( (a) )         Append tile a.
+[100]      ()                ( () (a ()) )   Append empty list to root, push it.
 [0 b]      (b)               ( (b) (a (b)) ) Append tile b.
-[101]      (a (b))           ( (a (b)) )    Pop stack. Active is root. No phantom tile needed!
+[101]      (a (b))           ( (a (b)) )     Pop stack. Active is root. No phantom tile needed!
 [101]      empty             empty          Pop stack. EoT.
 
 Test 2: The Deep Root fix -> ((a))
-Stream     stack.top()       stack          Action
--------    --------------    ----------     -------------------------
-[Init]     ()                ( () )         Init stack with empty list.
-[100]      ()                ( () ( () ) )  Append empty list to root, push it.
+Stream     stack.top()       stack           Action
+-------    --------------    ----------      -------------------------
+[Init]     ()                ( () )          Init stack with empty list.
+[100]      ()                ( () ( () ) )   Append empty list to root, push it.
 [0 a]      (a)               ( (a) ( (a) ) ) Append tile a.
 [111 2]    empty             empty          Pop stack 2 times. EoT.
 
@@ -146,8 +149,8 @@ s1. successively apply commands:
     0      | queue.front().append(ti) ; tile argument
   100      | queue.front().append(empty), queue.enqueue(empty) ; no argument
   101      | queue.dequeue() ; no argument
-  110      | N x (queue.front().append(empty), queue.enqueue(empty)) ; tile argument gives N
-  111      | N x queue.dequeue() ; tile argument gives N
+  110      | N × (queue.front().append(empty), queue.enqueue(empty)) ; tile argument gives N
+  111      | N × queue.dequeue() ; tile argument gives N
 
 When multiple 110 or 111 control codes are used in succession, Lynch addition is used to find the total number of queue, or dequeue operations to perform.
 
@@ -179,5 +182,6 @@ Stream     queue.front()     queue               Action
 [101]      empty             empty               Dequeue. Queue is empty. EoT.
 
 
-Again with 5 bit tiles, there are 40 bits of data.  For control, there are 8 x 1 + 5 * 3 = 22 bits of control. So again 62 bits total, and 35% being control overhead.
+Again with 5 bit tiles, there are 40 bits of data. For control, there are 8 × 1 + 5 × 3 = 22 bits of control. So again 62 bits total, and 35% being control overhead.
+
 

@@ -145,7 +145,6 @@
       ))
 
   ;; wrap with indentation
-  ;;
   (defvar-local RT-literal·display-wrap-offset 2)
   (defvar-local RT-literal·display-wrap-enabled t)
 

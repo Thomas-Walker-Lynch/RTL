@@ -18,106 +18,239 @@ In contrast, the Big Endian model for Arabic Number Representation flips the bit
 n_BE = Sum [ 2^{extent - i} ,{i, 0, extent}]
 ```
 
-This reversal is due to an error made by European translators in the middle ages. Arabic numbers in Arabic writing appear as least significant digit first, i.e. Little Endian. For arithmetic this makes good sense because when adding numbers we start first with the least significant digit. However the Arabs also write from right to left. When European translators did not appreciate the details of performing arithmetic, so when they reversed the direction of writing letters, they did not reverse the direction of writing digits. Thus, Big Endian was invented in the 1300s, and it leaves mathematicians to do the reversal that the European translators neglected to do in 1300s.
+This reversal is due to an error made by European translators in the middle ages. Arabic numbers in Arabic writing appear as least significant digit first, i.e. Little Endian. For arithmetic this makes good sense because when adding numbers we start first with the least significant digit. However the Arabs also write from right to left. European translators where not aware of the details of performing arithmetic, so when they reversed the direction of writing letters they left the numbers be, and did not reverse the direction of writing digits.  This is the genesis of Big Endian.
 
 2.2 Constants and Registers
 
-Programmers conceptualize numeric constants in source code, and in processor registers, as having the rightmost bit as the MSB and leftmost bit being the LSB. I.e. as a Big Endian numbers.
+Programmers conceptualize numeric constants in source code, and in processor registers, as having the rightmost bit as the MSB and leftmost bit being the LSB. I.e. as Big Endian numbers.
 
-Consequently, on Little Endian machines the bit a person envisions in memory starting with index zero at the left, appears in the register at the rightmost position, the LSB position.  This reversal being due to registers being conceptualized as Big Endian. It follows that on Big Endian machines the bit that comes from the leftmost of the bit array, appears at the leftmost of the register, at the MSB position. However,
+Consequently, on Little Endian machines, where the zero bit array index on the left, becomes the least signficant bit on the right in a register. This reversal being entirely conceptual, as mathematically there is no physical ordering, and even in realizations the question is one of connection topology.
 
-So we have an interesting situation, Big Endian is mathematically flipped in blocks of bits, where the extent of the block must be known in order to perform the flip, while Little Endian is conceptually flipped due to how we conceptualize numbers as being written. Little wonder programmers find this confusing, and can sometime can be heard to say the situation is, "NUXI".
+So we have an interesting situation, Big Endian is mathematically flipped in blocks of bits, where the extent of the block must be known in order to perform the flip, while Little Endian is conceptually flipped due to norms in the Western visualization of arrays and numbers.
 
-The problem with Big Endian is structural, but the problem with Little Endian is purely conceptual. Hence we could fix the Little Endian problem by conceptualizing numbers with their LSB at the leftmost. However, what starts as a conceptual problem becomes a computing problem when compilers do not provide such facilities. We can add a helper function until compilers mend their ways, if ever.
+Although the Little Endian bit reversal is conceptual, we have embedded these conceptions in our software languages, where arrays are written zero index on the left side, and numbers are written with the least significant on the right side. We could remove this reversal by using a left write flip function that takes a least significant bit on the left operand.  It would look something like this:
 
 ```
-left_to_right( 0xC012 ) -->  0x4803
+n = LRF( 0xC012 );  same number as Big Endian: 0x4803
 ```
+
+A conventional compiler targeting a Little Endian architecture would still flip the bits, but that second flip would undo the first slip, resulting in a net 'do nothing' to the bits.
 
 2.3 The impossibility of general conversion
 
-Suppose we have two 32 bit words in memory that were written little endian.
+Suppose we have two 32 bit numbers in memory written in Little Endian.
 ```
 a0 a1 b0 b1
 ```
 
-Here `a0` is the least significant byte of the first word, and `b0` is the least significant byte of the second word.
-We can then use the function `flip bytes` which reverses each byte pair. Applying that we get:
+Here `a0` is the least significant byte of the first number, and `b0` is the least significant byte of the second number. We can then use the function `flip bytes` which reverses each byte pair. Applying that we get:
 
 ```
 a1 a0 b1 b0
 ```
 
-This is a fine conversion to Big Endian.  Now let us pass a 64 bit word to the same conversion function.
+This is a fine conversion to Big Endian.
 
-In little Endian:
+However, teh byte pair reversal will fail if we try to convert a 64 bit Little Endian number:
+
 ```
 d0 d1 d2 d3
 ```
 
-Then converted:
+Converts to:
 ```
 d1 d0 d3 d2
 ```
 
-This is missed up. The correct answer would be `d3 d2 d1 d0`.  What this example shows us is that to convert Little Endian to Big Endian requires knowing the program level type that is to be applied.  But given only the four bytes and the knowledge they were written on a little endian machine, we can not know which conversion algorithm to apply.  This same problem extrapolates to other scenarios and to conversion from Big Endian to Little Endian.
+This is missed up. The correct answer would be `d3 d2 d1 d0`.
+
+This example shows us that it is not possible to use the same algorithm to convert 32 bit numbers and 64 bit numbers.  Yet, when given an array of bytes, we can't know which bytes belong to which number type without external information that tells us. I.e. type binding is required, but type is a higher level construct.  This problem generalizes to cases of other mixed type data.
+
+2.4 Extent-literal and Endian
+
+The extent-literal carries a configuration bit that says if the payload data was coded as Little Endian or Big Endian. However, the extent-literal carries limited type information about the payload, rather the program that uses the extent literal is expected to bind high level type.
+
+Consequently there is little a parser can do with the Endian bit apart from signaling an error. However, a program must bind type to data at some point in order to use it. Hence a program could still use a mismatched Endian payload if it is able to scan the payload in reverse, i.e. if it can emulate a Little Endian mode for the extent-literal instance.
 
 
 2. layer 0 format
 
-  extent-literal:: (<control>+<tile>)*
+The extent-literal is a multilevel protocol for communicating payload data as a message. At layer zero it is a variable length stream of bits. The 'first' bit transmitted is considered to be at index zero of the message. The 'first' bit is also called the 'start' bit.  An extent-literal message is variable length.  We call the index of the 'last' bit transmitted the message 'extent'.  The 'last' bit is also called the 'end' bit.
 
-The extent-literal models data as a bit array, with the zero index bit being leftmost, the array extending to the right. The index of the rightmost bit is called the array's 'extent'.  It follows that an array of 1 bit has an extent of 0.
+Here we use the term 'message' in its communication theoretical sense, and the terms 'first', 'start', 'last', and 'end' are part of an ontology of time dependent bit streaming. In a different ontology, that of programming, the extent-literal is a data type that can be discovered in memory. It is typically used as a constant for initializing a variable. This is where the 'literal' part of its name comes from.
 
-When decoding an extent-literal the bit array is scanned from left to right, starting with the leftmost bit of the extent-literal.
+As a programming entity the extent-literal is a static array of bits. The leftmost bit has an index of 0, and the index of the rightmost bit is then the extent-literal's bit array extent. Note that the term 'extent' applies generally as the maximum index of an array of any type, which is why I used the term 'bit array extent' rather than solely 'extent'.  An array with an extent of zero has one element.
 
-Control codes are variable length and are scanned from left to right. The leftmost bit of a tile, when the tile interpreted as an Arabic Representation of a Natural Number, is the LSB of the title. In this way if the tile is expanded on the right, its leading bits in a left to right scan remain the same.
+The extent-literal is not a number, so though it has a leftmost bit, and a rightmost bit, it does not have an lsb or msb. However, an extent-literal has a data portion called its 'payload', and that can be a number. The aforementioned Big-Endian/Little-Endian configuration bit provides the endianess of numbers in the payload.
+
+In programming terms the extent-literal is literal data in memory. It has variable bit length, which is inconvenient, so the extent-literal is often aligned to an addressable unit on the left, and padded out with zeros to complete an addressable unit on the right. The alignment used on the coding machine is also part of the extent-literal's configuration.
 
 3. layer 1 format
 
-  extent_literal:: <configuration><extension>*
+The tiles in first-order lists in the header are Little Endian and Lynch summed.
 
-  header:: ( <format> <display> ) <extent>
+The basic form is:
 
-  format:: c_enum
-  display: c_enum
-  extent:  c_natural_number
+extent-literal::  <header>[payload]
 
-  c_enum: ( tile* ) ; lynch summed
-  c_natural_number ( tile *) ; lynch summed
+The header specifies if the payload is to be included, and when it is included, how it is to be formatted.
 
-Header is always DFS, 5 bit tile.
+The header is made from two distinct types, blocks, and first order lists. The length of each blocks is specified in this specification. The header tiles size if 5 bits (extent of 4), the tile size of the payload is encoded in each instance. First order lists are controlled, and thus their length is extent-literal instance dependent. Herein we signify a block by putting its name between vertical bars:
 
-Example formats include, unspecified, ASCII, code point, UTF8
+  |name|
 
-Extensions are first order tile lists.
+and signify a first order list by putting a comma before its name:
 
-  bits
+  ,name
 
-  extent-literal version
-  0-1  version number
-  2    version extension follows: yes/no
+Note that a first order list, if it is present, always has at least one member. |init-0| is always present, all other fields, including both the blocks and first order lists, are optional.
 
-  3    display selection follows / default
-
-  payload
-
-  4    big/little creation of contained data
-  5    tile size follows
-  6    format  selection follows / default
-
-  7,8 Payload control
-
-    00 tile array
-    01 first order list
-    10 DFS 
-    11 BFS 
-
-  9,10 payload alignment
-     00 1  ; flows in bit stream
-     01 8  ; byte aligned
-     10 ?
-     11 alignment follows
+  header:: 
+    |init-0| 
+    ,version 
+    ,type 
+    |init-1| 
+    |payload-format| 
+    ,character-set
+    ,type
+    ,extent 
 
 
+
+3.1 Blocks
+
+3.1.0 |init-0|, the initial configuration block, always present. 6 bits
+
+  012 version number
+  3 include ,version
+  4 literal is null
+  5 include ,type - so that a null can be properly displayed.
+
+  if b4, then this is the last header block
+  else, include |init-1|
+
+3.1.1 |init-1|. 1 bit.
+
+  0 include |payload-format| - the payload descriptor
+
+    -Not including the payload-format descriptor means that we are left with payload-format-0.
+     Payload format zero is a bit aligned bit array.  At the format-1 level this would be
+     equivalent to an array type with sizeof(tile) == 1, and alignment = 1, to this combination has no payload-format encoding.
+
+  if not b0, then:
+    -payload is a bit array (format-0), so include its ,extent.
+    -this is the last header block.
+  else include |payload-format|
+
+3.1.2  |payload-format|.  
+
+    format-1
+    0,1
+      00 array
+      01 first order list
+      10 DF
+      11 BF
+
+      if 0,1 == 00 include ,extent
+
+    format-2
+    2 include ,character-set
+
+      if not b2 then:
+        - no character set is given so there can be no higher order 'type'
+        - there are no more header blocks
+      else:
+        include ,type
+
+        note, ,character-set looks something like:
+          00 ASCII
+          01 UTF8 ; array type, with a byte extent
+          10 Code point 
+            two options:
+
+              set format-1 to DF and tile size to 7, and send:
+                ((t0 t1 ..) (t0 t1 ..) ..)
+               where each (t0 t1 ..) is a code point integer
+
+              set format-1 to array, and tile size to 7, and send:
+                (t0 t1 ..) (t0 t1 ..)
+              where each (t0 t1 ..) is a first order list holding a code point integer
+
+          etc.
+
+     3 include payload tile size (defaults to 8)
+         if b3 include |payload-tile-size-scale|
+
+     4 include payload alignment (defaults to 8)
+         if b4 include |payload-alignment-scale|
+
+     format-3
+     5 include ,type
+         if not b5 payload data type is unspecified
+         else:
+           ,type looks something like this
+           000 SGML
+           001 HTML
+           010 TeX
+           011 C   
+           100 C++ 
+           101 Python
+           110 ECMA script
+           etc.
+
+         Editors make use of the type field to typeset output.
+         
+
+3.1.3 |payload-tile-size-scale|. 1 bit
+
+    0 exponential / linear
+
+       exponential = 2^(value + sizeof(tile) + 2) 
+       linear = value + (2 or 1)
+
+       e.g if sizeof(tile) == 2
+                                linear
+         value  exponential  array  controlled
+          00        16         2        1
+          01        32         3        2
+          10        64         4        3
+          11       128         5        4
+
+       An exponential or linear value of 8 is skipped as that is the default. That can be seen clearly in the exponential column, but the linear column in this small example did not go far enough to show it.
+
+       On the linear scale, a tile size of 1 and an array setting, would be the same as not having format-1, as format-0 is already an array of bits. However the ability to set a tile size of 1 is not redundant when combined with other format-1 types.
+
+
+3.1.3 |payload-alignment-scale|. 1 bit
+
+    0 exponential / linear
+
+       exponential = 2^(value + sizeof(tile) + 2) 
+       linear = value + (2 or 1)
+
+       e.g if sizeof(tile) == 2
+                                
+                                               linear
+         value  exponential  array sizeof(tile)=1  controlled
+          00        16                  2              1
+          01        32                  3              2
+          10        64                  4              3
+          11       128                  5              4
+
+       An array alignment of 1 would be bit alignment
+
+       As for the tile size setting, the default values are skipped. Namely, the default
+       for when format-1 is not included at all, which is a bit aligned array of bits, and the default when format-1 is included, but |payload-alignment-scale| is not (which is 8 bit alignment).
+
+Example
+
+Field,Bits,Description
+`,init-0,`
+",version",1 00000,Terminated list: Version 0 +1
+`,init-1,`
+`,payload-format,`
+",character-set",1 00001,UTF8 (Example value 01) 
+",semantic-type",1 00101,Python (Example value 101) 
+`,tile-size-scale,`
+",extent",1 00011,"3 tiles (for ""abc"") +1"
 
