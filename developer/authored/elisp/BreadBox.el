@@ -98,11 +98,14 @@
     "List of function symbols enabled for introspection logging. Populated in the Integration section."
     )
 
-  ;; decoration
+  ;; display theme
   ;;
 
-  (defvar-local RT-BreadBox·overlay·background 'RT-BreadBox·overlay·highlight_shade)
-  (defvar-local RT-BreadBox·overlay·selected    'RT-BreadBox·overlay·highlight_box)
+  (defvar-local RT-BreadBox·theme_alist nil
+    "A buffer-local alist defining the active visual theme for BreadBoxes.
+     Format: ((state_sym . face_plist) ...)
+     Example: ((background . (:background \"#333\")) (selected . (:box ...)))"
+    )
 
   ;; overlay stack
   ;;
@@ -124,6 +127,7 @@
      '(type detect display edit has-right-neighbor right-neighbor nesting-allowed overlap-allowed)"
     )
 
+
 ;;;-----------------------------------------------------------------------------
 ;;; Interior code
 ;;;
@@ -131,10 +135,53 @@
   ;; overlay
   ;;
 
+  (defun RT-BreadBox·theme·make-default ()
+    "Factory function generating a dynamic theme alist relative to the host buffer's current colors."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·theme·make-default "Generating default dynamic theme.")
+    (let*
+      (
+        (bg-raw_str (face-background 'default nil t))
+        (fg-raw_str (face-foreground 'default nil t))
+        (bg-color_str (if (or (null bg-raw_str) (string= bg-raw_str "unspecified-bg")) "#000000" bg-raw_str))
+        (fg-color_str (if (or (null fg-raw_str) (string= fg-raw_str "unspecified-fg")) "#FFFFFF" fg-raw_str))
+        (bg-hsl_list (apply 'color-rgb-to-hsl (color-name-to-rgb bg-color_str)))
+        (fg-hsl_list (apply 'color-rgb-to-hsl (color-name-to-rgb fg-color_str)))
+        (bg_h (nth 0 bg-hsl_list)) (bg_s (nth 1 bg-hsl_list)) (bg_l (nth 2 bg-hsl_list))
+        (fg_h (nth 0 fg-hsl_list)) (fg_s (nth 1 fg-hsl_list)) (fg_l (nth 2 fg-hsl_list))
+        (is-dark_bool (eq (frame-parameter nil 'background-mode) 'dark))
+        (new-bg_l 0.0) (new-fg_l 0.0)
+        )
+      (if
+        is-dark_bool
+        (progn
+          (setq new-bg_l (if (< (- bg_l 0.15) 0.0) (+ bg_l 0.15) (- bg_l 0.15)))
+          (setq new-fg_l (if (> (+ fg_l 0.10) 1.0) 1.0 (+ fg_l 0.10)))
+          (setq bg_s (min 1.0 (+ bg_s 0.1)))
+          )
+        (progn
+          (setq new-bg_l (if (> (+ bg_l 0.15) 1.0) (- bg_l 0.15) (+ bg_l 0.15)))
+          (setq new-fg_l (if (< (- fg_l 0.10) 0.0) 0.0 (- fg_l 0.10)))
+          (setq bg_s (min 1.0 (+ bg_s 0.1)))
+          ))
+      (let*
+        (
+          (base_plist (list :background (apply 'color-rgb-to-hex (color-hsl-to-rgb bg_h bg_s new-bg_l))
+                            :foreground (apply 'color-rgb-to-hex (color-hsl-to-rgb fg_h fg_s new-fg_l))))
+          (selected_plist (append base_plist (list :box (list :line-width 1 :color (plist-get base_plist :foreground)))))
+          (underline_plist (list :underline t))
+          )
+        ;; Return the theme alist
+        (list
+          (cons 'background base_plist)
+          (cons 'selected selected_plist)
+          (cons 'underline underline_plist)
+          ))))  
+
   ;; TTCA topology mapping to Emacs boundaries
   ;;
 
   (defun RT-BreadBox·overlay·make (leftmost_pos rightmost_pos)
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·overlay·make (format "Creating overlay from %d to %d" leftmost_pos rightmost_pos))
     (make-overlay leftmost_pos (1+ rightmost_pos))
     )
 
@@ -253,13 +300,14 @@
         (overlay-put overlay 'face selected-face_list)
         )))
 
+
 ;;;-----------------------------------------------------------------------------
 ;;; API
 ;;;
 
-
   (defun RT-BreadBox·type·register (type_sym definition_list)
     "Register a new BreadBox type."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·type·register "Invoked.")
     (let
       (
         (existing_cons (assq type_sym RT-BreadBox·type_alist))
@@ -270,14 +318,12 @@
         (push (cons type_sym definition_list) RT-BreadBox·type_alist)
         )))
 
-;;;-----------------------------------------------------------------------------
-;;; API
-;;;
 
-  (defun RT-BreadBox·buffer·scan (type_alist)
-    "Scan the current buffer to detect and overlay BreadBoxes using TYPE_ALIST."
-    (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·scan "Scanner invoked.")
+  (defun RT-BreadBox·buffer·scan (type_alist theme_alist)
+    "Scan the current buffer to detect and overlay BreadBoxes using TYPE_ALIST and apply THEME_ALIST."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·scan "Invoked.")
     (setq RT-BreadBox·type_alist type_alist)
+    (setq RT-BreadBox·theme_alist theme_alist)
     (save-excursion
       (goto-char (point-min))
       (while (< (point) (point-max))
@@ -293,6 +339,7 @@
                   (type_sym (car registry_cons))
                   (def_list (cdr registry_cons))
                   (detect_lambda (nth 1 def_list))
+                  (display_lambda (nth 2 def_list))  ;; We will call this if provided
                   (has-neighbor_lambda (nth 4 def_list))
                   (get-neighbor_lambda (nth 5 def_list))
                   (nesting-allowed_bool (nth 6 def_list))
@@ -303,6 +350,11 @@
                   (progn
                     (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·scan (format "Detected type %s at %d" type_sym current_pos))
                     (overlay-put ov 'RT-BreadBox·type type_sym)
+                    
+                    ;; If the type defines a display lambda, execute it now with the active theme
+                    (if display_lambda
+                        (funcall display_lambda ov nil RT-BreadBox·theme_alist))
+
                     (setq found_bool t)
                     (if
                       nesting-allowed_bool
@@ -320,8 +372,10 @@
             (forward-char 1)
             )))))
 
+
   (defun RT-BreadBox·buffer·insert-binary-payload-with-overlay (binary-data display-lambda)
     "Insert BINARY-DATA at point, cover it with an overlay, and call DISPLAY-LAMBDA."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·insert-binary-payload-with-overlay "Invoked.")
     (let
       (
         (leftmost_pos (point))
@@ -337,6 +391,7 @@
 
   (defun RT-BreadBox·buffer·update-binary-backing (ov new-binary-data new-display-string)
     "Replace the binary data under OV with NEW-BINARY-DATA, and update display."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·update-binary-backing "Invoked.")
     (let
       (
         (leftmost_pos (overlay-start ov))
@@ -356,6 +411,7 @@
 
   (defun RT-BreadBox·buffer·create-interactive-payload-overlay (leftmost_pos rightmost_right-neighbor_pos display-text label)
     "Create an overlay covering the topological payload bounds with a clickable DISPLAY-TEXT."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·create-interactive-payload-overlay "Invoked.")
     (let
       (
         (ov (make-overlay leftmost_pos rightmost_right-neighbor_pos))
@@ -379,13 +435,87 @@
 
   (setq RT-BreadBox·introspection·symbol_list
     '(
+       RT-BreadBox·type·register
        RT-BreadBox·buffer·scan
+       RT-BreadBox·buffer·insert-binary-payload-with-overlay
+       RT-BreadBox·buffer·update-binary-backing
+       RT-BreadBox·buffer·create-interactive-payload-overlay
+       RT-BreadBox·overlay·make
        RT-BreadBox·example·detect-esc-hex
        RT-BreadBox·example·scan-and-highlight
+       RT-BreadBox·example·highlight-demo
        ))
 
+
 ;;;-----------------------------------------------------------------------------
-;;; Example
+;;; example-highlight
+;;;
+;;;   overlay highlighting demonstrator
+;;;
+
+  (defun RT-BreadBox·example·highlight-demo ()
+    "Interactive command demonstrating various BreadBox highlight styles."
+    (interactive)
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·example·highlight-demo "Invoked.")
+    (let*
+      (
+        (demo_buffer (get-buffer-create "*RT-BreadBox-Demo*"))
+        (active_theme (RT-BreadBox·theme·make-default))
+        (bg_plist (cdr (assq 'background active_theme)))
+        (sel_plist (cdr (assq 'selected active_theme)))
+        (ul_plist (cdr (assq 'underline active_theme)))
+        )
+      (with-current-buffer demo_buffer
+        (erase-buffer)
+        (insert "BreadBox Highlight Demonstrations\n\n")
+
+        (let
+          (
+            (leftmost_pos (point))
+            )
+          (insert "This text uses the shade highlight.")
+          (let*
+            (
+              (rightmost_right-neighbor_pos (point))
+              (ov (RT-BreadBox·overlay·make leftmost_pos (1- rightmost_right-neighbor_pos)))
+              )
+            (overlay-put ov 'face bg_plist)
+            ))
+        (insert "\n\n")
+
+        (let
+          (
+            (leftmost_pos (point))
+            )
+          (insert "This text uses the box highlight (selection style).")
+          (let*
+            (
+              (rightmost_right-neighbor_pos (point))
+              (ov (RT-BreadBox·overlay·make leftmost_pos (1- rightmost_right-neighbor_pos)))
+              )
+            (overlay-put ov 'face sel_plist)
+            ))
+        (insert "\n\n")
+
+        (let
+          (
+            (leftmost_pos (point))
+            )
+          (insert "This text uses the underline highlight.")
+          (let*
+            (
+              (rightmost_right-neighbor_pos (point))
+              (ov (RT-BreadBox·overlay·make leftmost_pos (1- rightmost_right-neighbor_pos)))
+              )
+            (overlay-put ov 'face ul_plist)
+            ))
+        (insert "\n")
+        )
+      (switch-to-buffer demo_buffer)
+      ))
+ 
+;;;-----------------------------------------------------------------------------
+;;; example-escape-literal 
 ;;;
 ;;;   Balanced ESC characters delimited the bread box literal within a text buffer.
 ;;;
@@ -398,53 +528,75 @@
 ;;;   When nested, initially the outermost literal is opened, then successive select rotates through the literals.
 ;;;
 
-  ;; example detect lambda
+  ;; externally defined lambdas that get passed into BreadBox interface functions
   ;;
 
-  (defun RT-BreadBox·example·detect-esc-hex (current_pos)
+  (defun RT-BreadBox·example-escape-literal·detect-esc-hex (current_pos)
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·example-escape-literal·detect-esc-hex (format "Checking for ESC at %d" current_pos))
     (if
       (eq (char-after current_pos) ?\e)
       (let
         (
           (leftmost_pos current_pos)
-          (rightmost_right-neighbor_pos nil)
           )
-        (save-excursion
-          (goto-char (1+ current_pos))
-          (if
-            (search-forward "\e" nil t)
-            (setq rightmost_right-neighbor_pos (point))
-            nil
-            ))
-        (if
-          rightmost_right-neighbor_pos
-          (let*
-            (
-              (rightmost_pos (1- rightmost_right-neighbor_pos))
-              (ov (RT-BreadBox·overlay·make leftmost_pos rightmost_pos))
-              )
-            ov
+        (RT-BreadBox·introspection·write-if 'RT-BreadBox·example-escape-literal·detect-esc-hex "Leftmost ESC found.")
+        (let
+          (
+            (rightmost_right-neighbor_pos
+              (save-excursion
+                (goto-char (1+ current_pos))
+                (if
+                  (search-forward "\e" nil t)
+                  (point)
+                  nil
+                  )))
             )
-          nil
-          ))
+          (if
+            rightmost_right-neighbor_pos
+            (progn
+              (RT-BreadBox·introspection·write-if 'RT-BreadBox·example-escape-literal·detect-esc-hex "Rightmost ESC found.")
+              (let*
+                (
+                  (rightmost_pos (1- rightmost_right-neighbor_pos))
+                  (ov (RT-BreadBox·overlay·make leftmost_pos rightmost_pos))
+                  )
+                ov
+                ))
+            nil
+            )))
       nil
       ))
 
-  ;; example interactive scan
+  (defun RT-BreadBox·example-escape-literal·display (ov binary-data theme_alist)
+    "Display lambda called by the scanner or inserter."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·example-escape-literal·display "Invoked.")
+    (let*
+      (
+        (payload_str (buffer-substring-no-properties (1+ (overlay-start ov)) (1- (overlay-end ov))))
+        (hex_str (mapconcat (lambda (c) (format "%02x" c)) payload_str " "))
+        (bg_plist (cdr (assq 'background theme_alist)))
+        )
+      (overlay-put ov 'face bg_plist)
+      (overlay-put ov 'display hex_str)
+      ))
+
+  ;; Interactive interface
   ;;
 
-  (defun RT-BreadBox·example·scan-and-highlight ()
+  (defun RT-BreadBox·example-escape-literal·scan-and-highlight ()
     "Interactive command to scan the buffer and highlight all ESC-delimited BreadBoxes."
     (interactive)
-    (let
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·example-escape-literal·scan-and-highlight "Invoked.")
+    (let*
       (
+        (active_theme (RT-BreadBox·theme·make-default))
         (example_type_alist
           (list
             (cons 'esc-hex
               (list
                 'esc-hex
-                'RT-BreadBox·example·detect-esc-hex
-                nil
+                'RT-BreadBox·example-escape-literal·detect-esc-hex
+                'RT-BreadBox·example-escape-literal·display  ;; Now hooked up!
                 nil
                 nil
                 nil
@@ -452,20 +604,9 @@
                 nil
                 ))))
         )
-      (RT-BreadBox·buffer·scan example_type_alist)
-      (let
-        (
-          (ov_list (overlays-in (point-min) (point-max)))
-          )
-        (dolist (ov ov_list)
-          (if
-            (eq (overlay-get ov 'RT-BreadBox·type) 'esc-hex)
-            (let
-              (
-                (payload_str (buffer-substring-no-properties (1+ (overlay-start ov)) (1- (overlay-end ov))))
-                )
-              (overlay-put ov 'face RT-BreadBox·overlay·background)
-              (overlay-put ov 'display (concat "[HEX: " payload_str "]"))
-              )
-            nil
-            )))))
+      ;; We pass the generated theme into the scanner here.
+      ;; The scanner will handle calling the display lambda automatically,
+      ;; entirely eliminating the need for the manual `dolist` at the end!
+      (RT-BreadBox·buffer·scan example_type_alist active_theme)
+      ))
+
