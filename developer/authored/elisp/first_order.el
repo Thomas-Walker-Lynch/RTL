@@ -7,6 +7,101 @@
 ;;;------------------------------------------------------------------------------
 ;;; Utilities
 ;;;
+  (defun RT·bit·to-string (bit)
+    (if
+      bit
+      "1"
+      "0"
+      ))
+
+  (defun RT·bit-array·bit-to-string (bit-array i) (RT·bit·to-string (aref bit-array i)))
+
+  (defun RT·bit-array·to-string (bit-array)
+    (if 
+      (not bit-array)
+      ""
+      (let
+        (
+          (count (length bit-array))
+          )
+        (if 
+          (= count 0)
+          ""
+          (let
+            (
+              (str (RT·bit-array·bit-to-string bit-array 0))
+              (extent (- count 1))
+              (i 0)
+              )
+            (while
+              (if 
+                (= extent i)
+                nil
+                (progn
+                  (setq i (+ i 1))
+                  (setq str (concat str " " (RT·bit-array·bit-to-string bit-array i)))
+                  t
+                  )))
+            str
+            )))))
+
+  (defun RT·insert-binary-payload-with-overlay (binary-data display-lambda)
+    "Insert BINARY-DATA at point, cover it with an overlay, and call DISPLAY-LAMBDA."
+    (let ((start-pos (point)))
+      ;; Insert the raw unibyte string directly into the buffer
+      (insert binary-data)
+      (let* ((end-pos (point))
+             ;; Create the overlay spanning the newly inserted bytes
+             (payload-overlay (make-overlay start-pos end-pos)))
+
+        ;; Pass the overlay and the data to the provided lambda
+        (funcall display-lambda payload-overlay binary-data))))
+
+      ;; example
+      ;; (let ((my-image-data (unibyte-string #xFF #xD8 #xFF #xE0)))
+      ;;   (insert-binary-payload-with-overlay 
+      ;;    my-image-data
+      ;;    (lambda (ov data)
+      ;;      (let ((size (length data)))
+      ;;        ;; Visually replace the raw bytes with a clean label
+      ;;        (overlay-put ov 'display (format "[IMAGE PAYLOAD: %d bytes]" size))))))
+
+  (defun RT·update-binary-backing (ov new-binary-data new-display-string)
+    "Replace the binary data under OV with NEW-BINARY-DATA, and update display."
+    (let ((start (overlay-start ov))
+           (old-end (overlay-end ov)))
+      (save-excursion
+        (goto-char start)
+        ;; 1. Insert the new data first to prevent the overlay from collapsing
+        (insert new-binary-data)
+        
+        (let ((new-end (point)))
+          ;; 2. Delete the old binary data.
+          ;; The old data shifted forward by the length of the new insertion.
+          (delete-region new-end (+ new-end (- old-end start)))
+          
+          ;; 3. Ensure the overlay bounds match the newly inserted data
+          (move-overlay ov start new-end)
+          
+          ;; 4. Update the visual display to reflect the user's edits
+          (overlay-put ov 'display new-display-string)))))
+
+  (defun RT·create-interactive-payload-overlay (start end display-text)
+    "Create an overlay from START to END with a clickable DISPLAY-TEXT."
+    (let ((ov (make-overlay start end))
+          (map (make-sparse-keymap)))
+
+      ;; Define the actions for clicking or pressing Enter
+      (define-key map [mouse-1] 'my-trigger-edit-function)
+      (define-key map (kbd "RET") 'my-trigger-edit-function)
+
+      ;; Apply the properties
+      (overlay-put ov 'display display-text)
+      (overlay-put ov 'keymap map)
+      ;; Change the mouse cursor to indicate it is interactive
+      (overlay-put ov 'pointer 'hand)
+
+      ov))
 
 
 ;;;-----------------------------------------------------------------------------
@@ -35,6 +130,86 @@
         )
       str
       ))
+
+  ;; A buffer-local variable to remember which overlay we are editing
+  (defvar-local RT·active-overlay nil
+    "Stores the overlay from the main buffer while editing in a side window.")
+
+  (defun rt-payload-trigger-edit (ov)
+    "Read the type selector and dispatch the correct editing method for OV."
+    (interactive)
+    ;; The programmer extracts the raw binary data from under the overlay
+    (let* ((start (overlay-start ov))
+           (end (overlay-end ov))
+           (binary-data (buffer-substring-no-properties start end))
+           ;; In a complete implementation, you would parse BINARY-DATA here 
+           ;; to extract the type selector. For this demonstration, we simulate 
+           ;; extracting a 'c-code type.
+           (payload-type 'c-code)) 
+
+      (cond
+       ((eq payload-type 'inline)
+        (rt-payload-edit-inline ov binary-data))
+       ((eq payload-type 'external)
+        (rt-payload-edit-external ov binary-data))
+       (t
+        ;; The default "easy" path: open a side-by-side temporary buffer
+        (rt-payload-edit-in-buffer ov binary-data payload-type)))))
+
+  (defun rt-payload-edit-in-buffer (ov binary-data payload-type)
+    "Open a side-by-side buffer to edit the text representation of BINARY-DATA."
+    (let ((edit-buf (generate-new-buffer "*rt-payload-edit*"))
+          ;; Decode the unibyte string into a readable UTF-8 string for editing
+          (text-data (decode-coding-string binary-data 'utf-8)))
+
+      ;; Pop to the new buffer in a side window
+      (pop-to-buffer edit-buf '((display-buffer-pop-up-window)))
+      (insert text-data)
+
+      ;; Apply the correct major mode based on the type selector
+      (when (eq payload-type 'c-code)
+        (c-mode))
+
+      ;; Store the reference to the original overlay
+      (setq RT·active-overlay ov)
+
+      ;; Set up the commit keybinding
+      (local-set-key (kbd "C-c C-c") 'rt-payload-commit-edit)
+      (message "Editing payload. Press C-c C-c to save and close.")))
+
+  (defun rt-payload-commit-edit ()
+    "Encode the edited text back to binary, update the main buffer, and clean up."
+    (interactive)
+    (unless RT·active-overlay
+      (error "No active payload overlay found"))
+
+    (let* ((edited-text (buffer-string))
+           ;; Convert the edited text back into a raw unibyte string
+           (new-binary (encode-coding-string edited-text 'utf-8))
+           (ov RT·active-overlay))
+
+      ;; Switch context back to the main buffer to perform the update
+      (with-current-buffer (overlay-buffer ov)
+        ;; Call the update function we defined previously
+        (update-binary-backing ov new-binary "[DATA UPDATED]"))
+
+      ;; Clean up the temporary editing buffer and close the side window
+      (kill-buffer (current-buffer))
+      (delete-window)))
+
+  ;; --- Stubs for future routing ---
+
+  (defun rt-payload-edit-inline (ov binary-data)
+    "Stub: Expand the overlay text inline, hiding the rest of the buffer temporarily."
+    (message "Inline editing triggered but not yet implemented."))
+
+  (defun rt-payload-edit-external (ov binary-data)
+    "Stub: Write BINARY-DATA to a tmp file and launch an external application."
+    (message "External editing triggered but not yet implemented."))   
+
+
+
+
 
 ;;;-----------------------------------------------------------------------------
 ;;; API
@@ -178,190 +353,30 @@
       ))
 
   ;; By contract: `encoded_bit-array` must be a valid first-order list encoding.
-  ;; Writes bits to the buffer at point using LSB-first packing.
-  ;; Scans until the termination bit and its tile are written, returning the encoded extent.
-  (defun RT·first-order-list·buffer·write (tile_size encoded_bit-array)
-    (let
-      (
-        (input_count (length encoded_bit-array))
-        (in_i 0)
-        (byte_val 0)
-        (bit_i 0)
-        (terminated_bool nil)
-        (error_sym nil)
-        )
-      (while
-        (and (not terminated_bool) (not error_sym))
-        (if
-          (>= in_i input_count)
-          (setq error_sym 'RT·first-order-list·status·unexpected-end-of-array)
-          (let
-            (
-              (control_bit (aref encoded_bit-array in_i))
-              (tile_bit_count 0)
-              )
-            (setq in_i (+ in_i 1))
-            (if
-              (= control_bit 1)
-              (setq terminated_bool t)
-              nil
-              )
-            (setq byte_val (logior byte_val (lsh control_bit bit_i)))
-            (setq bit_i (+ bit_i 1))
-            (if
-              (= bit_i 8)
-              (progn
-                (insert byte_val)
-                (setq byte_val 0)
-                (setq bit_i 0)
-                )
-              nil
-              )
-            (while
-              (and (< tile_bit_count tile_size) (not error_sym))
-              (if
-                (>= in_i input_count)
-                (setq error_sym 'RT·first-order-list·status·unexpected-end-of-array)
-                (let
-                  (
-                    (tile_bit (aref encoded_bit-array in_i))
-                    )
-                  (setq in_i (+ in_i 1))
-                  (setq byte_val (logior byte_val (lsh tile_bit bit_i)))
-                  (setq bit_i (+ bit_i 1))
-                  (if
-                    (= bit_i 8)
-                    (progn
-                      (insert byte_val)
-                      (setq byte_val 0)
-                      (setq bit_i 0)
-                      )
-                    nil
-                    )
-                  (setq tile_bit_count (+ tile_bit_count 1))
-                  )))
-            )))
-      (if
-        error_sym
-        error_sym
-        (progn
-          (if
-            (> bit_i 0)
-            (insert byte_val)
-            nil
-            )
-          (- in_i 1)
-          ))))
-
-  ;; Reads a first-order list encoding from the buffer at point, decoding it
-  ;; on the fly until the terminator bit and its tile are processed.
-  ;; Expects LSB-first bit packing. Returns (cons extent decoded_bit-array).
-  (defun RT·first-order-list·buffer·read (tile_size)
-    (let
-      (
-        (byte_val 0)
-        (bit_i 8)
-        (terminated_bool nil)
-        (error_sym nil)
-        (decoded_list nil)
-        )
-      (while
-        (and (not terminated_bool) (not error_sym))
-        (if
-          (= bit_i 8)
-          (if
-            (eobp)
-            (setq error_sym 'RT·first-order-list·status·unexpected-eof)
-            (progn
-              (setq byte_val (char-after (point)))
-              (forward-char 1)
-              (setq bit_i 0)
-              ))
-          nil
-          )
-        (if
-          (not error_sym)
-          (let
-            (
-              (control_bit (logand (lsh byte_val bit_i) 1))
-              (tile_bit_count 0)
-              )
-            (setq bit_i (+ bit_i 1))
-            (if
-              (= control_bit 1)
-              (setq terminated_bool t)
-              nil
-              )
-            (while
-              (and (< tile_bit_count tile_size) (not error_sym))
-              (if
-                (= bit_i 8)
-                (if
-                  (eobp)
-                  (setq error_sym 'RT·first-order-list·status·unexpected-eof)
-                  (progn
-                    (setq byte_val (char-after (point)))
-                    (forward-char 1)
-                    (setq bit_i 0)
-                    ))
-                nil
-                )
-              (if
-                (not error_sym)
-                (let
-                  (
-                    (tile_bit (logand (lsh byte_val bit_i) 1))
-                    )
-                  (setq bit_i (+ bit_i 1))
-                  (setq decoded_list (cons tile_bit decoded_list))
-                  (setq tile_bit_count (+ tile_bit_count 1))
-                  )
-                nil
-                ))
-            )
-          nil
-          ))
-      (if
-        error_sym
-        error_sym
-        (let*
-          (
-            (decoded_array (vconcat (nreverse decoded_list)))
-            (extent_i (- (length decoded_array) 1))
-            )
-          (cons extent_i decoded_array)
-          ))))
-
-  ;; By contract: `encoded_bit-array` must be a valid first-order list encoding.
   ;; Pre-calculates exact bit requirements to prevent mid-overlay write failures.
-  (defun RT·first-order-list·overlay·write (target_overlay offset tile_size encoded_bit-array)
+  (defun RT·first-order-list·overlay·write (tile_size encoded_bit-array target_overlay offset )
     (let
       (
         (in_i 0)
         (input_count (length encoded_bit-array))
         (terminated_bool nil)
-        (error_sym nil)
-        )
+        (error_sym nil))
       (while
         (and (not terminated_bool) (not error_sym))
         (if
           (>= in_i input_count)
           (setq error_sym 'RT·first-order-list·status·unexpected-end-of-array)
           (let
-            (
-              (control_bit (aref encoded_bit-array in_i))
-              )
+            ((control_bit (aref encoded_bit-array in_i)))
             (if
               (= control_bit 1)
               (setq terminated_bool t)
-              nil
-              )
+              nil)
             (setq in_i (+ in_i 1 tile_size))
             (if
               (> in_i input_count)
               (setq error_sym 'RT·first-order-list·status·unexpected-end-of-array)
-              nil
-              ))))
+              nil))))
       (if
         error_sym
         error_sym
@@ -371,8 +386,7 @@
             (required_bytes (/ (+ required_bits 7) 8))
             (start_pos (+ (overlay-start target_overlay) offset))
             (available_bytes (- (overlay-end target_overlay) start_pos))
-            (is-expandable_bool (overlay-get target_overlay 'RT-expandable_bool))
-            )
+            (is-expandable_bool (overlay-get target_overlay 'RT-expandable_bool)))
           (if
             (and (> required_bytes available_bytes) (not is-expandable_bool))
             'RT·first-order-list·status·overlay-overflow
@@ -381,15 +395,12 @@
                 (original_point (point))
                 (byte_val 0)
                 (bit_i 0)
-                (read_i 0)
-                )
+                (read_i 0))
               (goto-char start_pos)
               (while
                 (< read_i required_bits)
                 (let
-                  (
-                    (bit (aref encoded_bit-array read_i))
-                    )
+                  ((bit (aref encoded_bit-array read_i)))
                   (setq byte_val (logior byte_val (lsh bit bit_i)))
                   (setq bit_i (+ bit_i 1))
                   (if
@@ -399,122 +410,29 @@
                         (< (point) (overlay-end target_overlay))
                         (progn
                           (delete-char 1)
-                          (insert byte_val)
-                          )
+                          (insert byte_val))
                         (progn
                           (insert byte_val)
-                          (move-overlay target_overlay (overlay-start target_overlay) (point))
-                          ))
+                          (move-overlay target_overlay (overlay-start target_overlay) (point))))
                       (setq byte_val 0)
-                      (setq bit_i 0)
-                      )
-                    nil
-                    )
-                  (setq read_i (+ read_i 1))
-                  ))
+                      (setq bit_i 0))
+                    nil)
+                  (setq read_i (+ read_i 1))))
               (if
                 (> bit_i 0)
                 (if
                   (< (point) (overlay-end target_overlay))
                   (progn
                     (delete-char 1)
-                    (insert byte_val)
-                    )
+                    (insert byte_val))
                   (progn
                     (insert byte_val)
-                    (move-overlay target_overlay (overlay-start target_overlay) (point))
-                    ))
-                nil
-                )
+                    (move-overlay target_overlay (overlay-start target_overlay) (point))))
+                nil)
               (goto-char original_point)
-              (- required_bits 1)
-              ))))))
+              (- required_bits 1)))))))
 
-  ;; Reads a first-order list encoding from an overlay, decoding on the fly.
-  (defun RT·first-order-list·overlay·read (target_overlay offset tile_size)
-    (let*
-      (
-        (start_pos (+ (overlay-start target_overlay) offset))
-        (overlay_end (overlay-end target_overlay))
-        (original_point (point))
-        )
-      (goto-char start_pos)
-      (let
-        (
-          (byte_val 0)
-          (bit_i 8)
-          (terminated_bool nil)
-          (error_sym nil)
-          (decoded_list nil)
-          )
-        (while
-          (and (not terminated_bool) (not error_sym))
-          (if
-            (= bit_i 8)
-            (if
-              (>= (point) overlay_end)
-              (setq error_sym 'RT·first-order-list·status·overlay-out-of-bounds)
-              (progn
-                (setq byte_val (char-after (point)))
-                (forward-char 1)
-                (setq bit_i 0)
-                ))
-            nil
-            )
-          (if
-            (not error_sym)
-            (let
-              (
-                (control_bit (logand (lsh byte_val bit_i) 1))
-                (tile_bit_count 0)
-                )
-              (setq bit_i (+ bit_i 1))
-              (if
-                (= control_bit 1)
-                (setq terminated_bool t)
-                nil
-                )
-              (while
-                (and (< tile_bit_count tile_size) (not error_sym))
-                (if
-                  (= bit_i 8)
-                  (if
-                    (>= (point) overlay_end)
-                    (setq error_sym 'RT·first-order-list·status·overlay-out-of-bounds)
-                    (progn
-                      (setq byte_val (char-after (point)))
-                      (forward-char 1)
-                      (setq bit_i 0)
-                      ))
-                  nil
-                  )
-                (if
-                  (not error_sym)
-                  (let
-                    (
-                      (tile_bit (logand (lsh byte_val bit_i) 1))
-                      )
-                    (setq bit_i (+ bit_i 1))
-                    (setq decoded_list (cons tile_bit decoded_list))
-                    (setq tile_bit_count (+ tile_bit_count 1))
-                    )
-                  nil
-                  ))
-              )
-            nil
-            ))
-        (goto-char original_point)
-        (if
-          error_sym
-          error_sym
-          (let*
-            (
-              (decoded_array (vconcat (nreverse decoded_list)))
-              (extent_i (- (length decoded_array) 1))
-              )
-            (cons extent_i decoded_array)
-            )))))
-
+  
 
 ;;;-----------------------------------------------------------------------------
 ;;; Interactive
