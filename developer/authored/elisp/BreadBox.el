@@ -33,8 +33,6 @@
 ;;;   The example section at the bottom uses an ASCII ESC character on the left to start a binary field, allows hex entry/display of the field, and ends with an ESC field. Yes, this example is flawed, a user could edit the binary and insert and ESC. The ESC characters are not shown in the display, as they are not part of the payload.
 ;;;
 
-
-
 ;;;------------------------------------------------------------------------------
 ;;; Utilities
 ;;;
@@ -58,9 +56,47 @@
     `(null ,stack_sym)
     )
 
+  ;; Introspection Utilities
+  ;;
+
+  (defun RT-BreadBox·introspection·write (source-buffer_name function_sym message_str)
+    "Write MESSAGE_STR to the global introspection buffer, creating a new frame if needed."
+    (let*
+      (
+        (introspection-buffer_name "*RT-BreadBox-Introspection*")
+        (introspection_buffer (get-buffer-create introspection-buffer_name))
+        (introspection_window (get-buffer-window introspection_buffer 0))
+        )
+      (if
+        (null introspection_window)
+        (let
+          (
+            (new_frame (make-frame '((name . "RT-BreadBox Introspection"))))
+            )
+          (set-window-buffer (frame-selected-window new_frame) introspection_buffer)
+          ))
+      (with-current-buffer introspection_buffer
+        (goto-char (point-max))
+        (insert (format "%s::%s::  %s\n" source-buffer_name function_sym message_str))
+        )))
+
+  (defmacro RT-BreadBox·introspection·write-if (function_sym message_str)
+    "Log a message if FUNCTION_SYM is in the active introspection list."
+    `(if
+       (memq ,function_sym RT-BreadBox·introspection·symbol_list)
+       (RT-BreadBox·introspection·write (buffer-name) ,function_sym ,message_str)
+       ))
+
 ;;;-----------------------------------------------------------------------------
 ;;; Configuration
 ;;;
+
+  ;; introspection
+  ;;
+
+  (defvar RT-BreadBox·introspection·symbol_list nil
+    "List of function symbols enabled for introspection logging. Populated in the Integration section."
+    )
 
   ;; decoration
   ;;
@@ -79,6 +115,15 @@
 
   (defvar RT-BreadBox·display·wrap-indent 2)
 
+  ;; type registry
+  ;;
+
+  (defvar-local RT-BreadBox·type_alist nil
+    "A buffer-local alist storing registered BreadBox types for the current buffer.
+     Set by RT-BreadBox·buffer·scan. The key is the type symbol. The value is the definition list:
+     '(type detect display edit has-right-neighbor right-neighbor nesting-allowed overlap-allowed)"
+    )
+
 ;;;-----------------------------------------------------------------------------
 ;;; Interior code
 ;;;
@@ -86,16 +131,26 @@
   ;; overlay
   ;;
 
-  (defun RT-BreadBox·overlay·make (leftmost_pos rightmost_pos))
+  ;; TTCA topology mapping to Emacs boundaries
+  ;;
 
-  (defun RT-BreadBox·overlay·wrap-on ())
-  (defun RT-BreadBox·overlay·wrap-off ())
+  (defun RT-BreadBox·overlay·make (leftmost_pos rightmost_pos)
+    (make-overlay leftmost_pos (1+ rightmost_pos))
+    )
+
+  (defun RT-BreadBox·overlay·wrap-on ()
+    )
+
+  (defun RT-BreadBox·overlay·wrap-off ()
+    )
 
   (defmacro RT-BreadBox·overlay·leftmost (overlay)
     `(overlay-start ,overlay)
     )
 
-  (defmacro RT-BreadBox·overlay·rightmost (overlay))
+  (defmacro RT-BreadBox·overlay·rightmost (overlay)
+    `(1- (overlay-end ,overlay))
+    )
 
   (defmacro RT-BreadBox·overlay·rightmost-right-neighbor (overlay)
     `(overlay-end ,overlay)
@@ -114,17 +169,22 @@
     )
 
   (defun RT-BreadBox·overlay·highlight-shades ()
-    (let* (
+    (let*
+      (
         (bg-raw_str (face-background 'default nil t))
         (fg-raw_str (face-foreground 'default nil t))
-        (bg-color_str (if
-                        (or (null bg-raw_str) (string= bg-raw_str "unspecified-bg"))
-                        "#000000"
-                        bg-raw_str))
-        (fg-color_str (if
-                        (or (null fg-raw_str) (string= fg-raw_str "unspecified-fg"))
-                        "#FFFFFF"
-                        fg-raw_str))
+        (bg-color_str
+          (if
+            (or (null bg-raw_str) (string= bg-raw_str "unspecified-bg"))
+            "#000000"
+            bg-raw_str
+            ))
+        (fg-color_str
+          (if
+            (or (null fg-raw_str) (string= fg-raw_str "unspecified-fg"))
+            "#FFFFFF"
+            fg-raw_str
+            ))
         (bg-hsl_list (apply 'color-rgb-to-hsl (color-name-to-rgb bg-color_str)))
         (fg-hsl_list (apply 'color-rgb-to-hsl (color-name-to-rgb fg-color_str)))
         (bg_h (nth 0 bg-hsl_list))
@@ -171,104 +231,158 @@
         )))
 
   (defun RT-literal·apply-highlight (overlay)
-    (let 
-      ( 
-        (face_prop (funcall RT-literal·highlight_func)) 
+    (let
+      (
+        (face_prop (funcall RT-literal·highlight_func))
         )
-      (if 
+      (if
         face_prop
         (overlay-put overlay 'face face_prop)
         (overlay-put overlay 'face nil)
         )))
 
   (defun RT-literal·apply-selection (overlay)
-    (let* (
+    (let*
+      (
         (base-face_list (funcall RT-literal·highlight_func))
         (fg-color_str (plist-get base-face_list :foreground))
         (selected-face_list (append base-face_list (list :box (list :line-width 1 :color fg-color_str))))
         )
-      (if 
+      (if
         base-face_list
         (overlay-put overlay 'face selected-face_list)
         )))
-
-
-
 
 ;;;-----------------------------------------------------------------------------
 ;;; API
 ;;;
 
+
+  (defun RT-BreadBox·type·register (type_sym definition_list)
+    "Register a new BreadBox type."
+    (let
+      (
+        (existing_cons (assq type_sym RT-BreadBox·type_alist))
+        )
+      (if
+        existing_cons
+        (setcdr existing_cons definition_list)
+        (push (cons type_sym definition_list) RT-BreadBox·type_alist)
+        )))
+
+;;;-----------------------------------------------------------------------------
+;;; API
+;;;
+
+  (defun RT-BreadBox·buffer·scan (type_alist)
+    "Scan the current buffer to detect and overlay BreadBoxes using TYPE_ALIST."
+    (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·scan "Scanner invoked.")
+    (setq RT-BreadBox·type_alist type_alist)
+    (save-excursion
+      (goto-char (point-min))
+      (while (< (point) (point-max))
+        (let
+          (
+            (current_pos (point))
+            (found_bool nil)
+            )
+          (catch 'found
+            (dolist (registry_cons RT-BreadBox·type_alist)
+              (let*
+                (
+                  (type_sym (car registry_cons))
+                  (def_list (cdr registry_cons))
+                  (detect_lambda (nth 1 def_list))
+                  (has-neighbor_lambda (nth 4 def_list))
+                  (get-neighbor_lambda (nth 5 def_list))
+                  (nesting-allowed_bool (nth 6 def_list))
+                  (ov (funcall detect_lambda current_pos))
+                  )
+                (if
+                  ov
+                  (progn
+                    (RT-BreadBox·introspection·write-if 'RT-BreadBox·buffer·scan (format "Detected type %s at %d" type_sym current_pos))
+                    (overlay-put ov 'RT-BreadBox·type type_sym)
+                    (setq found_bool t)
+                    (if
+                      nesting-allowed_bool
+                      (if
+                        (and has-neighbor_lambda (funcall has-neighbor_lambda current_pos))
+                        (goto-char (funcall get-neighbor_lambda current_pos))
+                        (forward-char 1)
+                        )
+                      (goto-char (overlay-end ov))
+                      )
+                    (throw 'found t)
+                    )))))
+          (if
+            (not found_bool)
+            (forward-char 1)
+            )))))
+
   (defun RT-BreadBox·buffer·insert-binary-payload-with-overlay (binary-data display-lambda)
     "Insert BINARY-DATA at point, cover it with an overlay, and call DISPLAY-LAMBDA."
-    (let ((start-pos (point)))
-      ;; Insert the raw unibyte string directly into the buffer
+    (let
+      (
+        (leftmost_pos (point))
+        )
       (insert binary-data)
-      (let* ((end-pos (point))
-             ;; Create the overlay spanning the newly inserted bytes
-             (payload-overlay (make-overlay start-pos end-pos)))
-
-        ;; Pass the overlay and the data to the provided lambda
-        (funcall display-lambda payload-overlay binary-data))))
-
-      ;; example
-      ;; (let ((my-image-data (unibyte-string #xFF #xD8 #xFF #xE0)))
-      ;;   (insert-binary-payload-with-overlay
-      ;;    my-image-data
-      ;;    (lambda (ov data)
-      ;;      (let ((size (length data)))
-      ;;        ;; Visually replace the raw bytes with a clean label
-      ;;        (overlay-put ov 'display (format "[IMAGE PAYLOAD: %d bytes]" size))))))
+      (let*
+        (
+          (rightmost_right-neighbor_pos (point))
+          (payload-overlay (make-overlay leftmost_pos rightmost_right-neighbor_pos))
+          )
+        (funcall display-lambda payload-overlay binary-data)
+        )))
 
   (defun RT-BreadBox·buffer·update-binary-backing (ov new-binary-data new-display-string)
     "Replace the binary data under OV with NEW-BINARY-DATA, and update display."
-    (let ((start (overlay-start ov))
-           (old-end (overlay-end ov)))
+    (let
+      (
+        (leftmost_pos (overlay-start ov))
+        (old-rightmost_right-neighbor_pos (overlay-end ov))
+        )
       (save-excursion
-        (goto-char start)
-        ;; 1. Insert the new data first to prevent the overlay from collapsing
+        (goto-char leftmost_pos)
         (insert new-binary-data)
+        (let
+          (
+            (new-rightmost_right-neighbor_pos (point))
+            )
+          (delete-region new-rightmost_right-neighbor_pos (+ new-rightmost_right-neighbor_pos (- old-rightmost_right-neighbor_pos leftmost_pos)))
+          (move-overlay ov leftmost_pos new-rightmost_right-neighbor_pos)
+          (overlay-put ov 'display new-display-string)
+          ))))
 
-        (let ((new-end (point)))
-          ;; 2. Delete the old binary data.
-          ;; The old data shifted forward by the length of the new insertion.
-          (delete-region new-end (+ new-end (- old-end start)))
-
-          ;; 3. Ensure the overlay bounds match the newly inserted data
-          (move-overlay ov start new-end)
-
-          ;; 4. Update the visual display to reflect the user's edits
-          (overlay-put ov 'display new-display-string)))))
-
-  (defun RT-BreadBox·buffer·create-interactive-payload-overlay (start end display-text label)
-    "Create an overlay from START to END with a clickable DISPLAY-TEXT."
-    (let ((ov (make-overlay start end))
-          (map (make-sparse-keymap)))
-
-      ;; Define the actions for clicking or pressing Enter
+  (defun RT-BreadBox·buffer·create-interactive-payload-overlay (leftmost_pos rightmost_right-neighbor_pos display-text label)
+    "Create an overlay covering the topological payload bounds with a clickable DISPLAY-TEXT."
+    (let
+      (
+        (ov (make-overlay leftmost_pos rightmost_right-neighbor_pos))
+        (map (make-sparse-keymap))
+        )
       (define-key map [mouse-1] 'my-trigger-edit-function)
       (define-key map (kbd "RET") 'my-trigger-edit-function)
-
-      ;; Apply the properties
       (overlay-put ov 'display display-text)
       (overlay-put ov 'keymap map)
-      ;; Change the mouse cursor to indicate it is interactive
       (overlay-put ov 'pointer 'hand)
-
-      ov))
-
-
+      ov
+      ))
 
 ;;;-----------------------------------------------------------------------------
 ;;; Interactive
 ;;;
 
-
-
 ;;;-----------------------------------------------------------------------------
 ;;; Integration
 ;;;
 
+  (setq RT-BreadBox·introspection·symbol_list
+    '(
+       RT-BreadBox·buffer·scan
+       RT-BreadBox·example·detect-esc-hex
+       RT-BreadBox·example·scan-and-highlight
+       ))
 
 ;;;-----------------------------------------------------------------------------
 ;;; Example
@@ -284,11 +398,74 @@
 ;;;   When nested, initially the outermost literal is opened, then successive select rotates through the literals.
 ;;;
 
+  ;; example detect lambda
+  ;;
 
-  ;; example find-next lambda
-  ;; caref
-  ;; finds the next interesting binary field
-  ;; returns (leftmost_pos rightmost_pos)
-  (defun RT-BreadBox·buffer·find-next ())
+  (defun RT-BreadBox·example·detect-esc-hex (current_pos)
+    (if
+      (eq (char-after current_pos) ?\e)
+      (let
+        (
+          (leftmost_pos current_pos)
+          (rightmost_right-neighbor_pos nil)
+          )
+        (save-excursion
+          (goto-char (1+ current_pos))
+          (if
+            (search-forward "\e" nil t)
+            (setq rightmost_right-neighbor_pos (point))
+            nil
+            ))
+        (if
+          rightmost_right-neighbor_pos
+          (let*
+            (
+              (rightmost_pos (1- rightmost_right-neighbor_pos))
+              (ov (RT-BreadBox·overlay·make leftmost_pos rightmost_pos))
+              )
+            ov
+            )
+          nil
+          ))
+      nil
+      ))
 
-; LocalWords:  BreadBox
+  ;; example interactive scan
+  ;;
+
+  (defun RT-BreadBox·example·scan-and-highlight ()
+    "Interactive command to scan the buffer and highlight all ESC-delimited BreadBoxes."
+    (interactive)
+    (let
+      (
+        (example_type_alist
+          (list
+            (cons 'esc-hex
+              (list
+                'esc-hex
+                'RT-BreadBox·example·detect-esc-hex
+                nil
+                nil
+                nil
+                nil
+                nil
+                nil
+                ))))
+        )
+      (RT-BreadBox·buffer·scan example_type_alist)
+      (let
+        (
+          (ov_list (overlays-in (point-min) (point-max)))
+          )
+        (dolist (ov ov_list)
+          (if
+            (eq (overlay-get ov 'RT-BreadBox·type) 'esc-hex)
+            (let
+              (
+                (payload_str (buffer-substring-no-properties (1+ (overlay-start ov)) (1- (overlay-end ov))))
+                )
+              (overlay-put ov 'face RT-BreadBox·overlay·background)
+              (overlay-put ov 'display (concat "[HEX: " payload_str "]"))
+              )
+            nil
+            )))))
