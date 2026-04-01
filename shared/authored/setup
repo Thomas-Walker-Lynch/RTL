@@ -5,4 +5,4 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   exit 1
 fi
 
-PATH="$REPO_HOME/shared/third_party/extent-literal_node/out/Release:$PATH"
+PATH="$REPO_HOME/shared/third_party/node_with_RTL/out/Release:$PATH"

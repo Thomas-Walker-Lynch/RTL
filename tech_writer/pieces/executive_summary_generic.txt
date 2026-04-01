@@ -1,4 +1,4 @@
-Executive Summary: Eradicating Injection Vulnerabilities via Extent Literals
+Executive Summary: Eradicating Injection Vulnerabilities via RT Literals
 
 The Problem: The Failure of In-Band Signaling
 
@@ -8,17 +8,17 @@ The industry standard mitigation is escaping—reserving an escape character to 
 
 The Solution: Out-of-Band Lexical Signaling
 
-The Extent Literal project resolves this architectural flaw by decoupling control from data. It modernizes the length-encoded string concept (historically seen in the Fortran H literal) for contemporary, UTF-8 capable environments.
+The RT Literal project resolves this architectural flaw by decoupling control from data. It modernizes the length-encoded string concept (historically seen in the Fortran H literal) for contemporary, UTF-8 capable environments.
 
-An extent literal defines the exact byte count of the payload before the payload begins. Visually represented to the programmer as “<extent> <content>”, the tokenizer reads the integer extent and blindly consumes that exact number of bytes. The parser never scans the payload for delimiters.
+An RT literal defines the exact byte count of the payload before the payload begins. Visually represented to the programmer as “<extent> <content>”, the tokenizer reads the integer extent and blindly consumes that exact number of bytes. The parser never scans the payload for delimiters.
 
 The Innovation: Tooling and Implementation
 
-Historically, length-encoded strings were hostile to human programmers, as manually counting bytes is error-prone. The Extent Literal project solves this through a dual approach:
+Historically, length-encoded strings were hostile to human programmers, as manually counting bytes is error-prone. The RT Literal project solves this through a dual approach:
 
 Editor Integration: Editor extensions (such as the provided extent-literal.el reference implementation for Emacs) handle the byte calculation silently. A programmer invokes a bounding box, types naturally, and the editor injects the calculated extent upon exit.
 
-Compiler/Interpreter Modification: Modified parsers (such as a patched V8/NodeJS interpreter) are updated to recognize the extent literal token, allowing them to bypass scanning and read the data block directly into memory.
+Compiler/Interpreter Modification: Modified parsers (such as a patched V8/NodeJS interpreter) are updated to recognize the RT literal token, allowing them to bypass scanning and read the data block directly into memory.
 
 Impact and Objectives
-By adopting extent literals, computing environments gain mathematical immunity to injection attacks. Nested strings scale linearly rather than exponentially, reducing code size and complexity. The objective of this funding request is to expand the demonstration tooling, formalize the standard for open-source adoption, and implement extent literal parsing across a wider array of tier-one compilers and interpreters.
+By adopting RT literals, computing environments gain mathematical immunity to injection attacks. Nested strings scale linearly rather than exponentially, reducing code size and complexity. The objective of this funding request is to expand the demonstration tooling, formalize the standard for open-source adoption, and implement RT literal parsing across a wider array of tier-one compilers and interpreters.

@@ -68,22 +68,22 @@ This example shows us that it is not possible to use the same algorithm to conve
 
 2.4 Extent-literal and Endian
 
-The extent-literal carries a configuration bit that says if the payload data was coded as Little Endian or Big Endian. However, the extent-literal carries limited type information about the payload, rather the program that uses the extent literal is expected to bind high level type.
+The RTL carries a configuration bit that says if the payload data was coded as Little Endian or Big Endian. However, the RTL carries limited type information about the payload, rather the program that uses the extent literal is expected to bind high level type.
 
-Consequently there is little a parser can do with the Endian bit apart from signaling an error. However, a program must bind type to data at some point in order to use it. Hence a program could still use a mismatched Endian payload if it is able to scan the payload in reverse, i.e. if it can emulate a Little Endian mode for the extent-literal instance.
+Consequently there is little a parser can do with the Endian bit apart from signaling an error. However, a program must bind type to data at some point in order to use it. Hence a program could still use a mismatched Endian payload if it is able to scan the payload in reverse, i.e. if it can emulate a Little Endian mode for the RTL instance.
 
 
 2. layer 0 format
 
-The extent-literal is a multilevel protocol for communicating payload data as a message. At layer zero it is a variable length stream of bits. The 'first' bit transmitted is considered to be at index zero of the message. The 'first' bit is also called the 'start' bit.  An extent-literal message is variable length.  We call the index of the 'last' bit transmitted the message 'extent'.  The 'last' bit is also called the 'end' bit.
+The RTL is a multilevel protocol for communicating payload data as a message. At layer zero it is a variable length stream of bits. The 'first' bit transmitted is considered to be at index zero of the message. The 'first' bit is also called the 'start' bit.  An RTL message is variable length.  We call the index of the 'last' bit transmitted the message 'extent'.  The 'last' bit is also called the 'end' bit.
 
-Here we use the term 'message' in its communication theoretical sense, and the terms 'first', 'start', 'last', and 'end' are part of an ontology of time dependent bit streaming. In a different ontology, that of programming, the extent-literal is a data type that can be discovered in memory. It is typically used as a constant for initializing a variable. This is where the 'literal' part of its name comes from.
+Here we use the term 'message' in its communication theoretical sense, and the terms 'first', 'start', 'last', and 'end' are part of an ontology of time dependent bit streaming. In a different ontology, that of programming, the RTL is a data type that can be discovered in memory. It is typically used as a constant for initializing a variable. This is where the 'literal' part of its name comes from.
 
-As a programming entity the extent-literal is a static array of bits. The leftmost bit has an index of 0, and the index of the rightmost bit is then the extent-literal's bit array extent. Note that the term 'extent' applies generally as the maximum index of an array of any type, which is why I used the term 'bit array extent' rather than solely 'extent'.  An array with an extent of zero has one element.
+As a programming entity the RTL is a static array of bits. The leftmost bit has an index of 0, and the index of the rightmost bit is then the RTL's bit array extent. Note that the term 'extent' applies generally as the maximum index of an array of any type, which is why I used the term 'bit array extent' rather than solely 'extent'.  An array with an extent of zero has one element.
 
-The extent-literal is not a number, so though it has a leftmost bit, and a rightmost bit, it does not have an lsb or msb. However, an extent-literal has a data portion called its 'payload', and that can be a number. The aforementioned Big-Endian/Little-Endian configuration bit provides the endianess of numbers in the payload.
+The RTL is not a number, so though it has a leftmost bit, and a rightmost bit, it does not have an lsb or msb. However, an RTL has a data portion called its 'payload', and that can be a number. The aforementioned Big-Endian/Little-Endian configuration bit provides the endianess of numbers in the payload.
 
-In programming terms the extent-literal is literal data in memory. It has variable bit length, which is inconvenient, so the extent-literal is often aligned to an addressable unit on the left, and padded out with zeros to complete an addressable unit on the right. The alignment used on the coding machine is also part of the extent-literal's configuration.
+In programming terms the RTL is literal data in memory. It has variable bit length, which is inconvenient, so the RTL is often aligned to an addressable unit on the left, and padded out with zeros to complete an addressable unit on the right. The alignment used on the coding machine is also part of the RTL's configuration.
 
 3. layer 1 format
 
@@ -91,11 +91,11 @@ The tiles in first-order lists in the header are Little Endian and Lynch summed.
 
 The basic form is:
 
-extent-literal::  <header>[payload]
+RTL::  <header>[payload]
 
 The header specifies if the payload is to be included, and when it is included, how it is to be formatted.
 
-The header is made from two distinct types, blocks, and first order lists. The length of each blocks is specified in this specification. The header tiles size if 5 bits (extent of 4), the tile size of the payload is encoded in each instance. First order lists are controlled, and thus their length is extent-literal instance dependent. Herein we signify a block by putting its name between vertical bars:
+The header is made from two distinct types, blocks, and first order lists. The length of each blocks is specified in this specification. The header tiles size if 5 bits (extent of 4), the tile size of the payload is encoded in each instance. First order lists are controlled, and thus their length is RTL instance dependent. Herein we signify a block by putting its name between vertical bars:
 
   |name|
 

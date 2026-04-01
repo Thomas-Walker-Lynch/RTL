@@ -2,8 +2,6 @@
 ;;;
 ;;;   The purpose of a BreadBox is to drop literal data, no matter what its contents, no matter what it represents, perhaps very short, perhaps very long, into an Emacs buffer, independent of the mode the buffer is in.  This can be used to create language literal strings without embedded escape sequences, or even to include raw binary such as media objects.
 ;;;
-;;;   When used with the extent-literal, Conforming compilers or interpreters will then facilitate using the contents of the BreadBox as a variable initializer. 
-;;;
 ;;;   A BreadBox instance is a sequence of bytes. This library does not directly examine the contents of a BreadBox, but rather, it is given externally defined lambdas that tell the library about the BreadBox. BreadBoxes are typed, and each type has a detector function associated with it:
 ;;;
 ;;;     '(type 
@@ -122,6 +120,39 @@
         (cons 'get-pos 
           (lambda () 
             current_list))
+        )))
+
+  (defun RT·TM·make-buffer-tape (leftmost_pos rightmost_pos initial_pos)
+    "Factory function generating a Tape Machine interface for a buffer region."
+    (let
+      (
+        (current_pos initial_pos)
+        )
+      (list
+        (cons 'cue-leftmost 
+          (lambda () 
+            (setq current_pos leftmost_pos)))
+            
+        (cons 'on-rightmost 
+          (lambda () 
+            (>= current_pos rightmost_pos)))
+            
+        (cons 'step 
+          (lambda () 
+            ;; Contract: Caller verified not on-rightmost()
+            (setq current_pos (1+ current_pos))))
+            
+        (cons 'read 
+          (lambda () 
+            (char-after current_pos)))
+            
+        (cons 'entangled-copy 
+          (lambda ()
+            (RT·TM·make-buffer-tape leftmost_pos rightmost_pos current_pos)))
+            
+        (cons 'get-pos 
+          (lambda () 
+            current_pos))
         )))
 
   (defun RT·TM·make-default-host-tape ()
@@ -387,44 +418,6 @@
         (overlay-put overlay 'face selected-face_list)
         )))
 
-
-;;;-----------------------------------------------------------------------------
-;;; API
-;;;
-
-  (defun RT·BreadBox·type·register (type_sym definition_list)
-    "Register a new BreadBox type."
-    (RT·BreadBox·introspection·write-if 'RT·BreadBox·type·register "Invoked.")
-    (let
-      (
-        (existing_cons (assq type_sym RT·BreadBox·type_alist))
-        )
-      (if
-        existing_cons
-        (setcdr existing_cons definition_list)
-        (push (cons type_sym definition_list) RT·BreadBox·type_alist)
-        )))
-
-  (defun RT·BreadBox·buffer·scan-host (type_alist theme_alist)
-    "Entry point to scan the host document. Bootstraps the mode-specific tape machine."
-    (RT·BreadBox·introspection·write-if 'RT·BreadBox·buffer·scan-host "Invoked.")
-    (setq RT·BreadBox·type_alist type_alist)
-    (setq RT·BreadBox·theme_alist theme_alist)
-    (let
-      (
-        (factory_cons (assq major-mode RT·BreadBox·host-tm_alist))
-        )
-      (let
-        (
-          (tm_factory (if factory_cons (cdr factory_cons) (cdr (assq 'default RT·BreadBox·host-tm_alist))))
-          )
-        (let
-          (
-            (host_TM (funcall tm_factory))
-            )
-          (RT·BreadBox·buffer·scan-tape host_TM RT·BreadBox·type_alist RT·BreadBox·theme_alist)
-          ))))
-
   (defun RT·BreadBox·buffer·scan-tape (target_TM type_alist theme_alist)
     "Universal scanner executing over a generalized Tape Machine."
     (RT·TM·cue-leftmost target_TM)
@@ -442,17 +435,17 @@
             nil ;; Break type loop if we have no types or already found a match
             (let
               (
-                (registry_cons (RT·TM·read type_TM))
+                (type-entry_cons (RT·TM·read type_TM))
                 )
               (let
                 (
-                  (type_sym (car registry_cons))
-                  (def_list (cdr registry_cons))
+                  (type_sym (car type-entry_cons))
+                  (type-def_list (cdr type-entry_cons))
                   )
                 (let
                   (
-                    (detect_lambda (nth 1 def_list))
-                    (display_lambda (nth 2 def_list))
+                    (detect_lambda (nth 1 type-def_list))
+                    (display_lambda (nth 2 type-def_list))
                     (lookahead_TM (RT·TM·entangled-copy target_TM))
                     )
                   (let
@@ -471,9 +464,8 @@
                           (setq found-nested_TM payload_TM)
                           (RT·BreadBox·introspection·write-if 
                             'RT·BreadBox·buffer·scan-tape 
-                            (format "Detected type %s" type_sym)
+                            (format "Detected type %s" (overlay-get ov 'RT·BreadBox·type))
                             )
-                          (overlay-put ov 'RT·BreadBox·type type_sym)
                           
                           (if display_lambda
                             (funcall display_lambda ov nil theme_alist)
@@ -513,6 +505,44 @@
             t   ;; Continue outer loop
             ))
         )))
+
+;;;-----------------------------------------------------------------------------
+;;; API
+;;;
+
+  (defun RT·BreadBox·type·register (type_sym definition_list)
+    "Register a new BreadBox type."
+    (RT·BreadBox·introspection·write-if 'RT·BreadBox·type·register "Invoked.")
+    (let
+      (
+        (existing_cons (assq type_sym RT·BreadBox·type_alist))
+        )
+      (if
+        existing_cons
+        (setcdr existing_cons definition_list)
+        (push (cons type_sym definition_list) RT·BreadBox·type_alist)
+        )))
+
+  (defun RT·BreadBox·buffer·scan-host (type_alist theme_alist)
+    "Entry point to scan the host document. Bootstraps the mode-specific tape machine."
+    (RT·BreadBox·introspection·write-if 'RT·BreadBox·buffer·scan-host "Invoked.")
+    (setq RT·BreadBox·type_alist type_alist)
+    (setq RT·BreadBox·theme_alist theme_alist)
+    (let
+      (
+        (factory_cons (assq major-mode RT·BreadBox·host-tm_alist))
+        )
+      (let
+        (
+          (tm_factory (if factory_cons (cdr factory_cons) (cdr (assq 'default RT·BreadBox·host-tm_alist))))
+          )
+        (let
+          (
+            (host_TM (funcall tm_factory))
+            )
+          (RT·BreadBox·buffer·scan-tape host_TM RT·BreadBox·type_alist RT·BreadBox·theme_alist)
+          ))))
+
 
   (defun RT·BreadBox·buffer·insert-binary-payload-with-overlay (binary-data display-lambda)
     "Insert BINARY-DATA at point, cover it with an overlay, and call DISPLAY-LAMBDA."
@@ -756,26 +786,26 @@
      Returns '(is_valid overlay payload_TM skip_count)"
     (let
       (
-        (start_val (funcall (cdr (assq 'read lookahead_TM))))
+        (start_val (RT·TM·read lookahead_TM))
         )
       (if
         (eq start_val ?\e)
         (let
           (
-            (leftmost_pos (funcall (cdr (assq 'get-pos lookahead_TM))))
+            (leftmost_pos (RT·TM·get-pos lookahead_TM))
             (found-end_bool nil)
             (skip_count 1)
             )
           (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect-esc-hex "Leftmost ESC found.")
-          (funcall (cdr (assq 'step lookahead_TM)))
+          (RT·TM·step lookahead_TM)
           
           (while (progn
             (if
-              (funcall (cdr (assq 'on-rightmost lookahead_TM)))
+              (RT·TM·on-rightmost lookahead_TM)
               nil
               (let
                 (
-                  (next_val (funcall (cdr (assq 'read lookahead_TM))))
+                  (next_val (RT·TM·read lookahead_TM))
                   )
                 (setq skip_count (1+ skip_count))
                 (if
@@ -785,7 +815,7 @@
                     nil
                     )
                   (progn
-                    (funcall (cdr (assq 'step lookahead_TM)))
+                    (RT·TM·step lookahead_TM)
                     t
                     )
                   )))))
@@ -794,7 +824,7 @@
             found-end_bool
             (let
               (
-                (rightmost-right-neighbor_pos (1+ (funcall (cdr (assq 'get-pos lookahead_TM)))))
+                (rightmost-right-neighbor_pos (1+ (RT·TM·get-pos lookahead_TM)))
                 )
               (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect-esc-hex "Rightmost ESC found.")
               (let
@@ -803,6 +833,7 @@
                   (ov (RT·BreadBox·overlay·make leftmost_pos (1- rightmost-right-neighbor_pos)))
                   (payload_TM (RT·TM·make-buffer-tape (1+ leftmost_pos) (1- rightmost_pos) (1+ leftmost_pos)))
                   )
+                (overlay-put ov 'RT·BreadBox·type 'esc-hex)
                 (list t ov payload_TM skip_count)
                 ))
             (list nil nil nil nil)
@@ -850,4 +881,3 @@
       ;; Call the host scan entry point
       (RT·BreadBox·buffer·scan-host example_type_alist active_theme)
       ))
-

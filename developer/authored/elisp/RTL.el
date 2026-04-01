@@ -1,38 +1,5 @@
 ;;;--------------------------------------------------------------------------------
-;;; An extent literal is embedded in the document with this syntax:
-;;;
-;;;   literal embedding:: 
-;;;     <left_delimiter><extent_field><content_field><right_delimiter> | <left delimiter><right delimiter>
-;;;
-;;;       extent_field::
-;;;         <hex encode unsigned integer extent><space>
-;;;
-;;;       content_field::
-;;;         array with max index of said extent of anything
-;;;
-;;; It is displayed to a person with this syntax:
-;;;   literal display:: 
-;;;     <left_delimiter>[<content_field>]<right_delimiter>
-;;;
-;;; The command to enter a new literal is:
-;;;
-;;;         M-x RT-literal·editor·make
-;;;         M-x RT-literal·editor·exit
-;;;
-;;;     if cdot, ·, causes difficulties, consider using a hot key. 
-;;;     See the Interface and Keybindings sections toward the bottom for more commands.
-;;;
-;;; --------------------------------------------------------------------------------
-;;; TTCA Theory vs. Emacs:
-;;;
-;;; In TTCA, a tape is an array of cells. A tape has a leftmost cell and a rightmost cell. Hence rightmost_right-neighbor is one cell to the right of rightmost. A tape area is not guaranteed to have a rightmost_right-neighbor, but it will always have a rightmost. The index of the leftmost cell is conventionally 0, the index of the rightmost cell is called the extent of the tape.  
-;;;
-;;; In C programming culture terminology 'length' is a count of cells in an array (a kind of tape). Hence length is 1 plus extent, and can overflow an index register, whereas the 'extent' is an index, and defines the required bit size of an index register.  'size' in C culture programming convention had the meaning of a count of the underlying bytes, unless otherwise noted. When speaking of arrays of bytes, 'extent' is the maximum byte index.
-;;;
-;;; In the context of this code, and when discussing extent literals, 'extent' refers to the byte extent.
-;;;
-;;; --------------------------------------------------------------------------------
-;;; We also have a conflict in interpretation of 'position' between position in Emacs and indexes in TTCA theory.  A tape (array) has cells, and an index (~ cursor position) indicates a cell.  Leftmost is then the leftmost cell, while rightmost is the rightmost cell.  
+;;; Emacs support for the RT Literal, RTL
 ;;;
 
 (require 'color)
@@ -302,7 +269,7 @@
           right-delimiter
           ))))
 
-  ;; By contract: only called when overlay holds a newly made, non-null, extent-literal.
+  ;; By contract: only called when overlay holds a newly made, non-null, RTL.
   ;; Everything from content_leftmost to content_rightmost is data, inclusive.
   (setq RT-literal·describe-new-form_status (list 'new-good))
   (defun RT-literal·describe-new-form_has-error (status)
@@ -379,8 +346,8 @@
                     (list 'edited-good extent_field_leftmost content_leftmost content-size))
                   ))))))))
 
-  ;; This is called when the overlay is believed to be holding an extent-literal.
-  ;; The overlay flag tells if it is incomplete new, or a fully formed extent-literal.
+  ;; This is called when the overlay is believed to be holding an RTL.
+  ;; The overlay flag tells if it is incomplete new, or a fully formed RTL.
   ;; The contained extent literal is in quoted form.
   ;; The extent literal might be empty.
   (setq  

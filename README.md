@@ -1,8 +1,8 @@
-# The Extent Literal project
+# The RT Literal Type project
 
-The Extent Literal project solves a security and reliability problem that has plagued computing since the shift to reserved-character tokenizers: the literal string. It accomplishes this by bringing back the Fortran H literal in a modern form, introducing editor tools to make them easy to add to source code, and presenting modified versions of compilers and interpreters so they can be parsed.
+The RT Literal Type project solves a security and reliability problem that has plagued computing since the shift to reserved-character tokenizers: the literal string. It accomplishes this by bringing back the Fortran H literal in a modern form, introducing editor tools to make them easy to add to source code, and presenting modified versions of compilers and interpreters so they can be parsed.
 
-The current demonstration version introduces `extent-literal.el` for Emacs, and a modified NodeJS interpreter to accept the extent literal tokens.
+The current demonstration version introduces `RTL.el` for Emacs, and a modified NodeJS interpreter to accept the extent literal tokens.
 
 ## Problem with the current approach
 
@@ -22,7 +22,7 @@ If a person continues the progression from line 1 to 3, the string grows exponen
 
 The method of extent literals never gives up control, so there is no step for trying to recover it. With an extent literal, the payload data is written exactly as it is from its source. There is no need for preprocessing and adulteration of the data.
 
-This works by having the programmer tell the editor when they start and finish entering a literal. The editor then drops the modified H literal encoding into the document. In the Emacs e-lisp reference implementation, a person accomplishes this by including `extent-literal.el` in the Emacs startup file, which provides the following commands:
+This works by having the programmer tell the editor when they start and finish entering a literal. The editor then drops the modified H literal encoding into the document. In the Emacs e-lisp reference implementation, a person accomplishes this by including `RTL.el` in the Emacs startup file, which provides the following commands:
 
 All commands are routed through the `M-o` prefix:
 * `M-o m` : Make a new literal.
@@ -37,7 +37,7 @@ The resulting literal becomes a distinct object to interact with in the editor. 
 
 ## The extent literal form
 
-A programmer should avoid manually entering the extent literal into the document. Although theoretically possible, using an extent-literal capable editor is highly recommended.
+A programmer should avoid manually entering the extent literal into the document. Although theoretically possible, using an RTL capable editor is highly recommended.
 
 In the source document, the extent literal displays with soft background highlighting as:
 
@@ -59,7 +59,7 @@ If a person continues the progression from line 1 to 3, the string grows linearl
 
 ## The Advantage Over Auto-Escaping Tools
 
-Someone could argue that if a tool is involved, the tool could simply insert the string with conventional escapes. Indeed, many people are now relying on IDEs to do exactly this. For that person, the Extent Literal project should be a welcome refinement. It is an approach that makes such tools more reliable, and makes their output smaller and far more legible.
+Someone could argue that if a tool is involved, the tool could simply insert the string with conventional escapes. Indeed, many people are now relying on IDEs to do exactly this. For that person, the RT Literal Type project should be a welcome refinement. It is an approach that makes such tools more reliable, and makes their output smaller and far more legible.
 
 ## Project Structure
 

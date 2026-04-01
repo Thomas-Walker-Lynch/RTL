@@ -2,7 +2,7 @@
 --------------------------------------------------------------------------------
 2026-03-20 14:59:10 ** 
 
-The current extent-literal_node modifications were made in scanner.c, but by that point in the code, the tokenizer has already broken the payload as a black box model, opened it up, and interpreted it as UTF8. 
+The current node_with_RTL modifications were made in scanner.c, but by that point in the code, the tokenizer has already broken the payload as a black box model, opened it up, and interpreted it as UTF8. 
 
   UTF8 does the following:
 
@@ -16,13 +16,13 @@ The current extent-literal_node modifications were made in scanner.c, but by tha
 
   Every subsequent byte in a multi-byte sequence is a designated "continuation byte" and must always start with the bits 10 (10xxxxxx).
 
-An extent-literal payload can be anything, including data that is not UTF8 specification conforming. In the current extent-literal_node mods, such extent-literals will suffer from rejection by the NodeJS tokenizer.
+An RTL payload can be anything, including data that is not UTF8 specification conforming. In the current RTL_node mods, such RTLs will suffer from rejection by the NodeJS tokenizer.
 
 In this 'version 0.1' we are only using extent-tokens as initial values for strings, and as such an error at some point is warranted if an initial value is not UTF8.  It would be like trying to assign a floating point value to an integer.
 
 There are other scenarios, which we are not working on currently, where a literal initializer with non-UTF8 payload would useful. Say for example, holding legacy parity bit ASCII strings, or perhaps an icon image. However we are not starting with this. 
 
-As far as I know, this 'string literal but not full literal' limitation also applies to the current extent-literal.el helper for inserting literal strings into source files.
+As far as I know, this 'string literal but not full literal' limitation also applies to the current RTL.el helper for inserting literal strings into source files.
 
 -Thomas
 
