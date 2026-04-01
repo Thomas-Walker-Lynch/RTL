@@ -93,6 +93,11 @@
         In <RT-code>let</RT-code> and <RT-code>let*</RT-code> forms, the variable declaration list is pushed to its own level. The opening parenthesis sits alone on a new line. Each binding sits on its own line. The closing parenthesis sits alone, vertically aligned with the opening parenthesis. The body of the form follows on the subsequent line.
       </p>
 
+      <h2>Using let to destructure a list</h2>
+      <p>
+        Don't destructure a list and then use the parts in a single `let*`, instead destructure the list in a first list, then use the parts in a second nested `let`.
+      </p>
+
       <h2>Cascading Closures</h2>
       <p>
         When the items of a list appear one per line, i.e. for a vertical list, the closing parenthesis, and all cascading closures, appear on a line of their own at the same indention level as though an element of the list. In a sense, the innermost vertical list wins, as it will close all the vertical lists it is nested in.
