@@ -1,0 +1,60 @@
+The `BreadBox` type is a holder of literal data. It is a cousin to the string type.
+
+The functions in the BreadBox library do not directly examine the contents of a BreadBox, but instead work from externally provided lambdas that describe the BreadBox.  These functions are called 'describers':
+
+     detect 
+     display 
+     edit 
+     has-right-neighbor 
+     right-neighbor 
+     nesting-allowed overlap-allowed
+
+There are potentially many concrete interfaces, and each can be different.  Hence each is given a name.
+
+  '(BreadBox-type
+     detect 
+     display 
+     edit 
+     has-right-neighbor 
+     right-neighbor 
+     nesting-allowed overlap-allowed
+     )
+
+BreadBox.el keeps a dictionary of keyed on BreadBox-type. Each key lookup returns a describer list, or nil if the key is not found. 
+
+In Emacs, overlays are used to give each BreadBox instance a separate in buffer representation, and display representation. Each BreadBox overlay has attached to it the BreadBox-type, and is called a BreadBoxOverlay.
+
+The host buffer must be scanned as first operation to create all the BreadBoxOverlays. Three functions are used by the scanner:
+
+1. detect
+2. has-right-neighbor
+3. right-neighbor
+4. can-be-nested
+
+`detect` is a function that after being given an Emacs buffer position in the host buffer, returns either nil, if it does not detect a BreadBox of the corresponding type, or returns an instance of BreadBoxOverlay.
+
+`has-right-neighbor` is a function that returns true if the BreadBoxOverlay has a right neighbor in the host buffer, and otherwise returns nil. If `has-right-neighbor` then `right-neighbor` is safe to call and returns the right neighbor of the overlay.
+
+If the BreadBoxOverlay has the `can-be-nested` attribute, then a tape machine is also attached to the overlay. This is used for traversing inside the overlay.
+
+4. TM
+
+
+
+
+----
+other BreadBox describer functions:
+
+`edit` is externally defined. One possibility is that it opens another panel for editing the BreadBox contents in another panel. Some BreadBoxes can be nested, so if a user opens a new BreadBox or edits a contained one, the current edit is pushed on to the buffer's RT·BreadBox·overlay·stack. Then editing of the outer BreadBox can continue after the inner BreadBox is finished.
+
+The utility `panel·open-temporary` provided with the library re-uses an already open panel on the right, or if the main buffer is on a panel on the right, it reuses the one on the left.  If the window is too narrow for side by side panels, it opens a panel below.  If the window is too small, it opens a new frame. If it opens a new panel or frame, it is temporary. It reuses a panel, then the original contents are restored when the edit is finished.
+
+Emacs will return a list of overlays under the cursor when an overlay is selected. Repeated  selection cycles through the overlays in the list. The highlight function used to indicate selection is a library configuration parameter.
+
+Our `edit` function is actually 'edit selected',  hence an overlay must be selected before its contents are edited.
+
+
+
+
+LocalWords:  BreadBox BreadBoxes subtyped BreadBoxOverlay
+#  LocalWords:  BreadBoxOverlays

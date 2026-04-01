@@ -1,34 +1,4 @@
-;;; Emacs BreadBox implementation
-;;;
-;;;   The purpose of a BreadBox is to drop literal data, no matter what its contents, no matter what it represents, perhaps very short, perhaps very long, into an Emacs buffer, independent of the mode the buffer is in.  This can be used to create language literal strings without embedded escape sequences, or even to include raw binary such as media objects.
-;;;
-;;;   A BreadBox instance is a sequence of bytes. This library does not directly examine the contents of a BreadBox, but rather, it is given externally defined lambdas that tell the library about the BreadBox. BreadBoxes are typed, and each type has a detector function associated with it:
-;;;
-;;;     '(type 
-;;;        detect 
-;;;        display 
-;;;        edit 
-;;;        has-right-neighbor 
-;;;        right-neighbor 
-;;;        nesting-allowed overlap-allowed
-;;;        )
-;;;
-;;;   `type` is a symbol. `detect` is passed a buffer position, and returns nil if the BreadBox is not detected at that position. Otherwise it returns an Emac's overlay that covers the BreadBox. The returned overlay has attached to it the symbol for its type.
-;;;   Before using the type to lookup the lambda, the overlay is first examined for an override, thus dispatch is done by a helper function.
-;;;
-;;;   A buffer must be scanned as first operation to detect all the BreadBoxes, and as BreadBoxes can be nested, the scan includes both the buffer in its mode, and internally through the BreadBox in its mode (using the `right-neighbor` lambda).
-;;;
-;;;   `edit` is externally defined. One possibility is that it opens another panel for editing the BreadBox contents in another panel. Some BreadBoxes can be nested, so if a user opens a new BreadBox or edits a contained one, the current edit is pushed on to the buffer's RT·BreadBox·overlay·stack. Then editing of the outer BreadBox can continue after the inner BreadBox is finished.
-;;;
-;;;   The utility `panel·open-temporary` provided with the library re-uses an already open panel on the right, or if the main buffer is on a panel on the right, it reuses the one on the left.  If the window is too narrow for side by side panels, it opens a panel below.  If the window is too small, it opens a new frame. If it opens a new panel or frame, it is temporary. It reuses a panel, then the original contents are restored when the edit is finished.
-;;;
-;;;   Display wrap is an overlay attribute. There are multiple options. A utility function uses this algorithm: when an indention is needed, it is taken as the indention of the line that the BreadBox appears on, plus the amount in the indent configuration variable.
-;;;
-;;;   Selecting an overlay can return a list of overlays at the given position found by traversing the internal overlay tree. The list returned by Emacs is reversed, and the initial selection is then the largest overlay. Selecting again cycles through the overlays in the list. The highlight function used by overlay selection is a library configuration parameters.
-;;;
-;;;   Our `edit` function is actually 'edit selected',  hence an overlay must be selected before its contents are edited.
-;;;
-;;;   The example section at the bottom uses an ASCII ESC character on the left to start a binary field, allows hex entry/display of the field, and ends with an ESC field. Yes, this example is flawed, a user could edit the binary and insert and ESC. The ESC characters are not shown in the display, as they are not part of the payload.
+;;; Emacs BreadBox
 ;;;
 
 ;;;------------------------------------------------------------------------------
@@ -53,6 +23,7 @@
   (defmacro RT·stack·is-empty (stack_sym)
     `(null ,stack_sym)
     )
+
 
   ;; Introspection Utilities
   ;;
@@ -85,74 +56,40 @@
        (RT·BreadBox·introspection·write (buffer-name) ,function_sym ,message_str)
        ))
 
+
   ;; Tape Machine
   ;;
 
   (defun RT·TM·make-list-tape (original_list &optional starting_list)
-    "Factory function generating a Tape Machine interface for a Lisp list."
     (let
       (
         (current_list (if starting_list starting_list original_list))
         )
       (list
-        (cons 'cue-leftmost 
-          (lambda () 
-            (setq current_list original_list)))
-            
-        (cons 'on-rightmost 
-          (lambda () 
-            ;; A list is on its rightmost cell if it has one or zero items left
-            (or (null current_list) (null (cdr current_list)))))
-            
-        (cons 'step 
-          (lambda () 
-            ;; Contract: Caller verified not on-rightmost()
-            (setq current_list (cdr current_list))))
-            
-        (cons 'read 
-          (lambda () 
-            (car current_list)))
-            
-        (cons 'entangled-copy 
-          (lambda ()
-            (RT·TM·make-list-tape original_list current_list)))
-            
-        (cons 'get-pos 
-          (lambda () 
-            current_list))
+        (cons 'cue-leftmost (lambda () (setq current_list original_list)))
+        (cons 'on-rightmost (lambda () (or (null current_list) (null (cdr current_list)))))
+        (cons 'step (lambda () (setq current_list (cdr current_list))))
+        (cons 'read (lambda () (car current_list)))
+        (cons 'entangled-copy (lambda () (RT·TM·make-list-tape original_list current_list)))
+        (cons 'get-pos (lambda () current_list))
+        ;; NEW: Jump directly to an opaque position token
+        (cons 'cue (lambda (pos_token) (setq current_list pos_token)))
         )))
 
   (defun RT·TM·make-buffer-tape (leftmost_pos rightmost_pos initial_pos)
-    "Factory function generating a Tape Machine interface for a buffer region."
     (let
       (
         (current_pos initial_pos)
         )
       (list
-        (cons 'cue-leftmost 
-          (lambda () 
-            (setq current_pos leftmost_pos)))
-            
-        (cons 'on-rightmost 
-          (lambda () 
-            (>= current_pos rightmost_pos)))
-            
-        (cons 'step 
-          (lambda () 
-            ;; Contract: Caller verified not on-rightmost()
-            (setq current_pos (1+ current_pos))))
-            
-        (cons 'read 
-          (lambda () 
-            (char-after current_pos)))
-            
-        (cons 'entangled-copy 
-          (lambda ()
-            (RT·TM·make-buffer-tape leftmost_pos rightmost_pos current_pos)))
-            
-        (cons 'get-pos 
-          (lambda () 
-            current_pos))
+        (cons 'cue-leftmost (lambda () (setq current_pos leftmost_pos)))
+        (cons 'on-rightmost (lambda () (>= current_pos rightmost_pos)))
+        (cons 'step (lambda () (setq current_pos (1+ current_pos))))
+        (cons 'read (lambda () (char-after current_pos)))
+        (cons 'entangled-copy (lambda () (RT·TM·make-buffer-tape leftmost_pos rightmost_pos current_pos)))
+        (cons 'get-pos (lambda () current_pos))
+        ;; NEW: Jump directly to an opaque position token
+        (cons 'cue (lambda (pos_token) (setq current_pos pos_token)))
         )))
 
   (defun RT·TM·make-default-host-tape ()
@@ -185,6 +122,10 @@
 
   (defmacro RT·TM·get-pos (tm)
     `(funcall (cdr (assq 'get-pos ,tm)))
+    )
+
+  (defmacro RT·TM·cue (tm pos_token)
+    `(funcall (cdr (assq 'cue ,tm)) ,pos_token)
     )
 
 
@@ -325,208 +266,100 @@
     (RT·BreadBox·stack·stack-is-empty RT·BreadBox·stack·overlay-stack)
     )
 
-  (defun RT·BreadBox·overlay·highlight-none ()
-    nil
-    )
+  ;; By contract, user gives non-null substrate_TM ad ov-type_to_fn-list_TM.
+  ;; The substrate_TM is a sequence of characters/bytes that we are scanning over.
+  ;; Each overlay type, ov-type, has its own detector function
+  (defun RT·BreadBox·buffer·scan-tape (substrate_TM describer_dict theme_alist)
+    "Scan substrate for sequences to put overlays over."
 
-  (defun RT·BreadBox·overlay·highlight-default ()
-    'region
-    )
-
-  (defun RT·BreadBox·overlay·highlight-shades ()
-    (let*
-      (
-        (bg-raw_str (face-background 'default nil t))
-        (fg-raw_str (face-foreground 'default nil t))
-        (bg-color_str
-          (if
-            (or (null bg-raw_str) (string= bg-raw_str "unspecified-bg"))
-            "#000000"
-            bg-raw_str
-            ))
-        (fg-color_str
-          (if
-            (or (null fg-raw_str) (string= fg-raw_str "unspecified-fg"))
-            "#FFFFFF"
-            fg-raw_str
-            ))
-        (bg-hsl_list (apply 'color-rgb-to-hsl (color-name-to-rgb bg-color_str)))
-        (fg-hsl_list (apply 'color-rgb-to-hsl (color-name-to-rgb fg-color_str)))
-        (bg_h (nth 0 bg-hsl_list))
-        (bg_s (nth 1 bg-hsl_list))
-        (bg_l (nth 2 bg-hsl_list))
-        (fg_h (nth 0 fg-hsl_list))
-        (fg_s (nth 1 fg-hsl_list))
-        (fg_l (nth 2 fg-hsl_list))
-        (is-dark_bool (eq (frame-parameter nil 'background-mode) 'dark))
-        (new-bg_l 0.0)
-        (new-fg_l 0.0)
-        )
-      (if
-        is-dark_bool
-        (progn
-          (setq new-bg_l (- bg_l 0.15))
-          (if
-            (< new-bg_l 0.0)
-            (setq new-bg_l (+ bg_l 0.15))
-            )
-          (setq new-fg_l (+ fg_l 0.10))
-          (if
-            (> new-fg_l 1.0)
-            (setq new-fg_l 1.0)
-            )
-          (setq bg_s (min 1.0 (+ bg_s 0.1)))
-          )
-        (progn
-          (setq new-bg_l (+ bg_l 0.15))
-          (if
-            (> new-bg_l 1.0)
-            (setq new-bg_l (- bg_l 0.15))
-            )
-          (setq new-fg_l (- fg_l 0.10))
-          (if
-            (< new-fg_l 0.0)
-            (setq new-fg_l 0.0)
-            )
-          (setq bg_s (min 1.0 (+ bg_s 0.1)))
-          ))
-      (list
-        :background (apply 'color-rgb-to-hex (color-hsl-to-rgb bg_h bg_s new-bg_l))
-        :foreground (apply 'color-rgb-to-hex (color-hsl-to-rgb fg_h fg_s new-fg_l))
-        )))
-
-  (defun RT·literal·apply-highlight (overlay)
-    (let
-      (
-        (face_prop (funcall RT·literal·highlight_func))
-        )
-      (if
-        face_prop
-        (overlay-put overlay 'face face_prop)
-        (overlay-put overlay 'face nil)
-        )))
-
-  (defun RT·literal·apply-selection (overlay)
-    (let*
-      (
-        (base-face_list (funcall RT·literal·highlight_func))
-        (fg-color_str (plist-get base-face_list :foreground))
-        (selected-face_list (append base-face_list (list :box (list :line-width 1 :color fg-color_str))))
-        )
-      (if
-        base-face_list
-        (overlay-put overlay 'face selected-face_list)
-        )))
-
-  (defun RT·BreadBox·buffer·scan-tape (target_TM type_alist theme_alist)
-    "Universal scanner executing over a generalized Tape Machine."
-    (RT·TM·cue-leftmost target_TM)
-    (while
-      (let
-        (
-          (found-nested_TM nil)
-          (type_TM (RT·TM·make-list-tape type_alist))
-          )
-        (if type_alist (RT·TM·cue-leftmost type_TM))
-          
-        ;; Detect phase using the type_TM
+    (RT·TM·cue-leftmost substrate_TM) 
+    (while 
+      (progn
+        
+        (RT·TM·cue-leftmost ov-type_to_fn-list_TM)
         (while
-          (if (or (null type_alist) found-nested_TM)
-            nil ;; Break type loop if we have no types or already found a match
-            (let
-              (
-                (type-entry_cons (RT·TM·read type_TM))
-                )
-              (let
-                (
-                  (type_sym (car type-entry_cons))
-                  (type-def_list (cdr type-entry_cons))
-                  )
+          (let*
+            ( ;; lookup the detect function to try
+              (ov-type_and_fn_list (RT·TM·read ov-type_to_fn-list_TM))
+              (ov-type (car ov-type_and_fn_list))
+              (fn-list (cdr ov-type_and_fn_list))
+              (detect (nth 1 fn-list))
+              )
+            
+
                 (let
                   (
-                    (detect_lambda (nth 1 type-def_list))
-                    (display_lambda (nth 2 type-def_list))
-                    (lookahead_TM (RT·TM·entangled-copy target_TM))
+                    ;; Returns nil on failure, or '(ov payload_TM resume_pos) on success
+                    (ov-characterization_list (funcall detect_lambda lookahead_TM))
                     )
-                  (let
-                    (
-                      (detect_result (funcall detect_lambda lookahead_TM))
-                      )
+                  (if ov-characterization_list
                     (let
                       (
-                        (is_valid (nth 0 detect_result))
-                        (ov (nth 1 detect_result))
-                        (payload_TM (nth 2 detect_result))
-                        (skip_count (nth 3 detect_result))
+                        (ov (nth 0 ov-characterization_list))
+                        (payload_TM (nth 1 ov-characterization_list))
+                        (resume_pos (nth 2 ov-characterization_list))
                         )
-                      (if is_valid
-                        (progn
-                          (setq found-nested_TM payload_TM)
-                          (RT·BreadBox·introspection·write-if 
-                            'RT·BreadBox·buffer·scan-tape 
-                            (format "Detected type %s" (overlay-get ov 'RT·BreadBox·type))
-                            )
-                          
-                          (if display_lambda
-                            (funcall display_lambda ov nil theme_alist)
-                            )
-                            
-                          ;; Recursive internal scan
-                          (RT·BreadBox·buffer·scan-tape payload_TM type_alist theme_alist)
-                          
-                          ;; Advance the parent tape past the parsed structure
-                          (let ((skips skip_count))
-                            (while
-                              (if (or (<= skips 0) (RT·TM·on-rightmost target_TM))
-                                nil
-                                (progn
-                                  (RT·TM·step target_TM)
-                                  (setq skips (1- skips))
-                                  t
-                                  ))))
-                          ))
+                      (setq found-nested_TM payload_TM)
+                      (RT·BreadBox·introspection·write-if 
+                        'RT·BreadBox·buffer·scan-tape 
+                        (format "Detected type %s" (overlay-get ov 'RT·BreadBox·type))
+                        )
                       
-                      ;; Center break logic for the type_TM iteration
-                      (if (RT·TM·on-rightmost type_TM)
-                        nil ;; Terminate inner loop
-                        (progn
-                          (RT·TM·step type_TM)
-                          t   ;; Continue inner loop
-                          ))
-                      )))))))
-        
-        ;; Center break logic for the target_TM iteration
-        (if (RT·TM·on-rightmost target_TM)
-          nil ;; Terminate outer loop
-          (progn
-            (if (not found-nested_TM)
-              (RT·TM·step target_TM)
-              )
-            t   ;; Continue outer loop
-            ))
-        )))
+                      (if display_lambda
+                        (funcall display_lambda ov nil theme_alist)
+                        )
+                      
+                      ;; Recursive internal scan checked via overlay property
+                      (if (overlay-get ov 'RT·BreadBox·can-be-nested)
+                        (RT·BreadBox·buffer·scan-tape payload_TM ov-type_to_fn-list_alist theme_alist)
+                        )
+                      
+                      ;; INSTANT JUMP: Bypass the payload entirely to avoid illegal character reads
+                      (RT·TM·cue substrate_TM resume_pos)
+                      ))
+                  
+                  ;; Center break logic for the ov-type_to_fn-list_TM iteration
+                  (if (RT·TM·on-rightmost ov-type_to_fn-list_TM)
+                    nil ;; Terminate inner loop
+                    (progn
+                      (RT·TM·step ov-type_to_fn-list_TM)
+                      t   ;; Continue inner loop
+                      ))
+                  )))))))
+
+          ;; Center break logic for the substrate_TM iteration
+          (if (RT·TM·on-rightmost substrate_TM)
+            nil ;; Terminate outer loop
+            (progn
+              (if (not found-nested_TM)
+                (RT·TM·step substrate_TM)
+                )
+              t   ;; Continue outer loop
+              ))
+          ))
+
 
 ;;;-----------------------------------------------------------------------------
 ;;; API
 ;;;
 
-  (defun RT·BreadBox·type·register (type_sym definition_list)
+  (defun RT·BreadBox·type·register (ov-type definition_list)
     "Register a new BreadBox type."
     (RT·BreadBox·introspection·write-if 'RT·BreadBox·type·register "Invoked.")
     (let
       (
-        (existing_cons (assq type_sym RT·BreadBox·type_alist))
+        (existing_cons (assq ov-type RT·BreadBox·type_alist))
         )
       (if
         existing_cons
         (setcdr existing_cons definition_list)
-        (push (cons type_sym definition_list) RT·BreadBox·type_alist)
+        (push (cons ov-type definition_list) RT·BreadBox·type_alist)
         )))
 
-  (defun RT·BreadBox·buffer·scan-host (type_alist theme_alist)
+  (defun RT·BreadBox·buffer·scan-host (ov-type_to_fn-list_alist theme_alist)
     "Entry point to scan the host document. Bootstraps the mode-specific tape machine."
     (RT·BreadBox·introspection·write-if 'RT·BreadBox·buffer·scan-host "Invoked.")
-    (setq RT·BreadBox·type_alist type_alist)
+    (setq RT·BreadBox·type_alist ov-type_to_fn-list_alist)
     (setq RT·BreadBox·theme_alist theme_alist)
     (let
       (
@@ -542,7 +375,6 @@
             )
           (RT·BreadBox·buffer·scan-tape host_TM RT·BreadBox·type_alist RT·BreadBox·theme_alist)
           ))))
-
 
   (defun RT·BreadBox·buffer·insert-binary-payload-with-overlay (binary-data display-lambda)
     "Insert BINARY-DATA at point, cover it with an overlay, and call DISPLAY-LAMBDA."
@@ -781,9 +613,9 @@
   ;; externally defined lambdas that get passed into BreadBox interface functions
   ;;
 
-  (defun RT·BreadBox·example-escape-literal·detect-esc-hex (lookahead_TM)
+(defun RT·BreadBox·example-escape-literal·detect-esc-hex (lookahead_TM)
     "Detector operating over a Tape Machine. 
-     Returns '(is_valid overlay payload_TM skip_count)"
+     Returns '(overlay payload_TM resume_pos) on success, or nil on failure."
     (let
       (
         (start_val (RT·TM·read lookahead_TM))
@@ -793,52 +625,52 @@
         (let
           (
             (leftmost_pos (RT·TM·get-pos lookahead_TM))
-            (found-end_bool nil)
-            (skip_count 1)
             )
           (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect-esc-hex "Leftmost ESC found.")
           (RT·TM·step lookahead_TM)
           
-          (while (progn
-            (if
-              (RT·TM·on-rightmost lookahead_TM)
-              nil
+          (let
+            (
+              (found-end_bool
+                (catch 'found
+                  (while (progn
+                    (if (RT·TM·on-rightmost lookahead_TM)
+                      nil
+                      (let ((next_val (RT·TM·read lookahead_TM)))
+                        (if (eq next_val ?\e)
+                          (throw 'found t)
+                          (progn (RT·TM·step lookahead_TM) t)
+                          )))))
+                  nil
+                  ))
+              )
+            (if found-end_bool
               (let
                 (
-                  (next_val (RT·TM·read lookahead_TM))
+                  (rightmost-right-neighbor_pos (1+ (RT·TM·get-pos lookahead_TM)))
                   )
-                (setq skip_count (1+ skip_count))
-                (if
-                  (eq next_val ?\e)
-                  (progn
-                    (setq found-end_bool t)
-                    nil
-                    )
-                  (progn
-                    (RT·TM·step lookahead_TM)
-                    t
-                    )
-                  )))))
+                (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect-esc-hex "Rightmost ESC found.")
+                
+                ;; Advance the lookahead TM exactly one cell past the BreadBox to capture the resume token
+                (if (not (RT·TM·on-rightmost lookahead_TM))
+                  (RT·TM·step lookahead_TM)
+                  )
                   
-          (if
-            found-end_bool
-            (let
-              (
-                (rightmost-right-neighbor_pos (1+ (RT·TM·get-pos lookahead_TM)))
-                )
-              (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect-esc-hex "Rightmost ESC found.")
-              (let
-                (
-                  (rightmost_pos (1- rightmost-right-neighbor_pos))
-                  (ov (RT·BreadBox·overlay·make leftmost_pos (1- rightmost-right-neighbor_pos)))
-                  (payload_TM (RT·TM·make-buffer-tape (1+ leftmost_pos) (1- rightmost_pos) (1+ leftmost_pos)))
-                  )
-                (overlay-put ov 'RT·BreadBox·type 'esc-hex)
-                (list t ov payload_TM skip_count)
-                ))
-            (list nil nil nil nil)
-            ))
-        (list nil nil nil nil)
+                (let*
+                  (
+                    (resume_pos (RT·TM·get-pos lookahead_TM))
+                    (rightmost_pos (1- rightmost-right-neighbor_pos))
+                    (ov (RT·BreadBox·overlay·make leftmost_pos rightmost_pos))
+                    (payload_TM (RT·TM·make-buffer-tape (1+ leftmost_pos) (1- rightmost_pos) (1+ leftmost_pos)))
+                    )
+                  (overlay-put ov 'RT·BreadBox·type 'esc-hex)
+                  (overlay-put ov 'RT·BreadBox·can-be-nested t)
+                  
+                  (list ov payload_TM resume_pos)
+                  ))
+              nil
+              )))
+        nil
         )))
 
   (defun RT·BreadBox·example-escape-literal·display (ov binary-data theme_alist)
