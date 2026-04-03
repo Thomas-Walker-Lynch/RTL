@@ -1,0 +1,30 @@
+The Evolution of Tape Machine Terminology
+
+The terminology for relating tape machines went through several phases to eliminate mixed metaphors and inaccurate implications.
+
+Spatial and Tree Metaphors: Initial terms like 'nested' and 'enclosing' lacked clear directional vectors. 'Parent' and 'child' provided strict directionality but described a structural hierarchy, clashing with execution concepts.
+
+Execution and Debugger Metaphors: The step-in interface and terms like 'sub-TM' borrowed from debugging and process management. This implied a strict call stack and restricted the programmer from freely reading a machine to define custom control flow.
+
+Container Ontology: Calling the yielded machine a 'contained machine' worked well for physical tapes. However, a storage metaphor proved inadequate for abstract machines, which compute their return values dynamically via combinational logic.
+
+Interface-Driven Ontology: The final resolution focuses strictly on the interface. Because the read operation is idempotent, returning the same value until a step occurs, the relationship is best described by the operations themselves. The ontology centers on the 'working function', the 'given machine', and the 'returned machine'. Consequently, structural concepts are abandoned in favor of operational reality: "A tape machine can be written to another tape machine." This strips away forced metaphors, leaving a precise description of the data flow.
+
+Examples
+
+"""
+I am removing step-in from the tape interface. If `read` on a given machine returns another  machine, the working function can use the returned machine directly. It makes little sense for the working function to then call `step-in` to cause the implicitly machine to use the very machine that was just returned.
+"""
+
+Instead of
+"""
+A tape machine can contain other tape machines.
+"""
+--> 
+"""
+A first tape machine can be written to a second tape machine.
+"""
+or
+"""
+'write` can be given data or another tape machine.
+"""

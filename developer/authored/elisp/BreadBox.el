@@ -24,6 +24,134 @@
     `(null ,stack_sym)
     )
 
+  ;; Generic Dictionary Interface
+  ;;
+
+  (defun RT·dict·make ()
+    "Create a new mutable dictionary."
+    (list '*RT·dict*)
+    )
+
+  (defun RT·dict·write (dict key value)
+    "Put VALUE into DICT under KEY."
+    (let
+      (
+        (existing_cons (assq key (cdr dict)))
+        )
+      (if
+        existing_cons
+        (setcdr existing_cons value)
+        (setcdr dict (cons (cons key value) (cdr dict)))
+        )))
+
+  (defun RT·dict·read (dict key)
+    "Get the value associated with KEY in DICT. Returns nil if not found."
+    (cdr (assq key (cdr dict)))
+    )
+
+  (defun RT·dict·dealloc (dict key)
+    "Remove KEY from DICT."
+    (setcdr dict (assq-delete-all key (cdr dict)))
+    )
+
+  (defun RT·dict·to-alist (dict)
+    "Return the underlying alist representing the dictionary entries."
+    (cdr dict)
+    )
+
+  (defun RT·dict·make-TM (dict)
+    "Generate a Tape Machine interface for iterating over the entries of DICT."
+    (RT·TM·make_list-tape (RT·dict·to-alist dict))
+    )
+
+  ;; Tape Machine
+  ;;
+
+  (defun RT·TM·make_list-tape (original_list &optional starting_list)
+    (let
+      (
+        (current_list (if starting_list starting_list original_list))
+        )
+      (list
+        (cons 'cue-leftmost (lambda () (setq current_list original_list)))
+        (cons 'has-right-neighbor (lambda () (or (null current_list) (null (cdr current_list)))))
+        (cons 'step (lambda () (setq current_list (cdr current_list))))
+        (cons 'read (lambda () (car current_list)))
+        (cons 'entangled-copy (lambda () (RT·TM·make_list-tape original_list current_list)))
+        (cons 'get-pos (lambda () current_list))
+        (cons 'cue (lambda (pos_token) (setq current_list pos_token)))
+        )))
+
+  (defun RT·TM·make_buffer-tape (leftmost_pos rightmost_pos initial_pos)
+    (let
+      (
+        (current_pos initial_pos)
+        )
+      (list
+        (cons 'cue-leftmost (lambda () (setq current_pos leftmost_pos)))
+        (cons 'has-right-neighbor (lambda () (>= current_pos rightmost_pos)))
+        (cons 'step (lambda () (setq current_pos (1+ current_pos))))
+        (cons 'read (lambda () (char-after current_pos)))
+        (cons 'entangled-copy (lambda () (RT·TM·make_buffer-tape leftmost_pos rightmost_pos current_pos)))
+        (cons 'get-pos (lambda () current_pos))
+        (cons 'cue (lambda (pos_token) (setq current_pos pos_token)))
+        )))
+
+  (defun RT·TM·make_default-host-tape ()
+    "Factory function for the default full-buffer tape machine."
+    (RT·TM·make_buffer-tape (point-min) (1- (point-max)) (point-min))
+    )
+
+  (defun RT·TM·make_string-tape (original_string &optional starting_idx)
+    "Factory function generating a Tape Machine interface for an Elisp string."
+    (let
+      (
+        (current_idx (if starting_idx starting_idx 0))
+        (str_len (length original_string))
+        )
+      (list
+        (cons 'cue-leftmost (lambda () (setq current_idx 0)))
+        (cons 'on-rightmost (lambda () (>= current_idx str_len)))
+        (cons 'step (lambda () (setq current_idx (1+ current_idx))))
+        (cons 'read (lambda () (aref original_string current_idx)))
+        (cons 'entangled-copy (lambda () (RT·TM·make_string-tape original_string current_idx)))
+        (cons 'get-pos (lambda () current_idx))
+        (cons 'cue (lambda (pos_token) (setq current_idx pos_token)))
+        )))
+
+  ;; Tape Machine Accessor Macros
+  ;;
+
+  (defmacro RT·TM·cue-leftmost (tm)
+    `(funcall (cdr (assq 'cue-leftmost ,tm)))
+    )
+
+  (defmacro RT·TM·has-right-neighbor (tm)
+    `(funcall (cdr (assq 'has-right-neighbor ,tm)))
+    )
+  (defmacro RT·TM·on-rightmost (tm)
+    `(funcall (not (cdr (assq 'has-right-neighbor ,tm))))
+    )
+
+  (defmacro RT·TM·step (tm)
+    `(funcall (cdr (assq 'step ,tm)))
+    )
+
+  (defmacro RT·TM·read (tm)
+    `(funcall (cdr (assq 'read ,tm)))
+    )
+
+  (defmacro RT·TM·entangled-copy (tm)
+    `(funcall (cdr (assq 'entangled-copy ,tm)))
+    )
+
+  (defmacro RT·TM·get-pos (tm)
+    `(funcall (cdr (assq 'get-pos ,tm)))
+    )
+
+  (defmacro RT·TM·cue (tm pos_token)
+    `(funcall (cdr (assq 'cue ,tm)) ,pos_token)
+    )
 
   ;; Introspection Utilities
   ;;
@@ -56,77 +184,61 @@
        (RT·BreadBox·introspection·write (buffer-name) ,function_sym ,message_str)
        ))
 
-
-  ;; Tape Machine
+  ;; parsing
   ;;
 
-  (defun RT·TM·make-list-tape (original_list &optional starting_list)
-    (let
-      (
-        (current_list (if starting_list starting_list original_list))
-        )
-      (list
-        (cons 'cue-leftmost (lambda () (setq current_list original_list)))
-        (cons 'on-rightmost (lambda () (or (null current_list) (null (cdr current_list)))))
-        (cons 'step (lambda () (setq current_list (cdr current_list))))
-        (cons 'read (lambda () (car current_list)))
-        (cons 'entangled-copy (lambda () (RT·TM·make-list-tape original_list current_list)))
-        (cons 'get-pos (lambda () current_list))
-        ;; NEW: Jump directly to an opaque position token
-        (cons 'cue (lambda (pos_token) (setq current_list pos_token)))
-        )))
-
-  (defun RT·TM·make-buffer-tape (leftmost_pos rightmost_pos initial_pos)
-    (let
-      (
-        (current_pos initial_pos)
-        )
-      (list
-        (cons 'cue-leftmost (lambda () (setq current_pos leftmost_pos)))
-        (cons 'on-rightmost (lambda () (>= current_pos rightmost_pos)))
-        (cons 'step (lambda () (setq current_pos (1+ current_pos))))
-        (cons 'read (lambda () (char-after current_pos)))
-        (cons 'entangled-copy (lambda () (RT·TM·make-buffer-tape leftmost_pos rightmost_pos current_pos)))
-        (cons 'get-pos (lambda () current_pos))
-        ;; NEW: Jump directly to an opaque position token
-        (cons 'cue (lambda (pos_token) (setq current_pos pos_token)))
-        )))
-
-  (defun RT·TM·make-default-host-tape ()
-    "Factory function for the default full-buffer tape machine."
-    (RT·TM·make-buffer-tape (point-min) (1- (point-max)) (point-min))
-    )
-
-  ;; Tape Machine Accessor Macros
+  ;; Emacs elisp does not have TCO
   ;;
+  ;; (defun RT·BreadBox·eq-prefix_UTF8-1 (TM-substrate TM-prefix)
+  ;;   (let
+  ;;     (
+  ;;       (eq-prefix (eq (RT·TM·read TM-substrate) (RT·TM·read TM-prefix)))
+  ;;       (prefix-has-right-neighbor (not (RT·TM·on-rightmost TM-prefix)))
+  ;;       (substrate-has-right-neighbor (not (RT·TM·on-rightmost TM-substrate)))
+  ;;       )
+  ;;     (if 
+  ;;       (and eq-prefix prefix-has-right-neighbor substrate-has-right-neighbor)
+  ;;       (progn
+  ;;         (RT·TM·step TM-substrate) 
+  ;;         (RT·TM·step TM-prefix)
+  ;;         (RT·BreadBox·eq-prefix_UTF8-1 TM-substrate TM-prefix)
+  ;;         )
+  ;;       (and eq-prefix (not prefix-has-right-neighbor))
+  ;;       )))
+  ;;
+  ;; (defun RT·BreadBox·eq-prefix_UTF8 (TM_substrate_UTF8 TM_prefix)
+  ;;   (let
+  ;;     (
+  ;;       (TM-sub-copy (RT·TM·entangled-copy TM_substrate_UTF8))
+  ;;       (TM-pref-copy (RT·TM·entangled-copy TM_prefix))
+  ;;       )
+  ;;     (RT·BreadBox·eq-prefix_UTF8-1 TM-sub-copy TM-pref-copy)
+  ;;     ))
 
-  (defmacro RT·TM·cue-leftmost (tm)
-    `(funcall (cdr (assq 'cue-leftmost ,tm)))
-    )
 
-  (defmacro RT·TM·on-rightmost (tm)
-    `(funcall (cdr (assq 'on-rightmost ,tm)))
-    )
-
-  (defmacro RT·TM·step (tm)
-    `(funcall (cdr (assq 'step ,tm)))
-    )
-
-  (defmacro RT·TM·read (tm)
-    `(funcall (cdr (assq 'read ,tm)))
-    )
-
-  (defmacro RT·TM·entangled-copy (tm)
-    `(funcall (cdr (assq 'entangled-copy ,tm)))
-    )
-
-  (defmacro RT·TM·get-pos (tm)
-    `(funcall (cdr (assq 'get-pos ,tm)))
-    )
-
-  (defmacro RT·TM·cue (tm pos_token)
-    `(funcall (cdr (assq 'cue ,tm)) ,pos_token)
-    )
+  (defun RT·BreadBox·eq-prefix_UTF8 (TM_substrate_UTF8 TM_prefix)
+    (let
+      (
+        (TM-substrate (RT·TM·entangled-copy TM_substrate_UTF8))
+        (TM-prefix    (RT·TM·entangled-copy TM_prefix))
+        )
+      (let
+        (
+          (eq-prefix (eq (RT·TM·read TM-substrate) (RT·TM·read TM-prefix)))
+          (prefix-has-right-neighbor (not (RT·TM·on-rightmost TM-prefix)))
+          (substrate-has-right-neighbor (not (RT·TM·on-rightmost TM-substrate)))
+          )
+        (while 
+          (and eq-prefix prefix-has-right-neighbor substrate-has-right-neighbor)
+          (progn
+            (RT·TM·step TM-substrate) 
+            (RT·TM·step TM-prefix)
+            (setq eq-prefix (eq (RT·TM·read TM-substrate) (RT·TM·read TM-prefix)))
+            (setq prefix-has-right-neighbor (not (RT·TM·on-rightmost TM-prefix)))
+            (setq substrate-has-right-neighbor (not (RT·TM·on-rightmost TM-substrate)))
+            ))
+        (and eq-prefix (not prefix-has-right-neighbor))
+        )))
 
 
 ;;;-----------------------------------------------------------------------------
@@ -145,7 +257,7 @@
 
   (defvar RT·BreadBox·host-tm_alist
     '(
-       (default . RT·TM·make-default-host-tape)
+       (default . RT·TM·make_default-host-tape)
        )
     "Alist mapping major modes to Tape Machine factories."
     )
@@ -181,15 +293,56 @@
   ;; type registry
   ;;
 
-  (defvar-local RT·BreadBox·type_alist nil
-    "A buffer-local alist storing registered BreadBox types for the current buffer.
-     Set by RT·BreadBox·buffer·scan. The key is the type symbol. The value is the definition list:
-     '(type detect display edit has-right-neighbor right-neighbor nesting-allowed overlap-allowed)"
+  (defvar-local RT·BreadBox·describer_dict nil
+    "A buffer-local dictionary mapping an ov-type to its canonical fn-list."
+    )
+
+  (defvar-local RT·BreadBox·topology_dict nil
+    "A buffer-local dictionary mapping a substrate-type to a dictionary of allowed nested ov-types."
     )
 
 ;;;-----------------------------------------------------------------------------
 ;;; Interior code
 ;;;
+
+  ;; describer entry accessors
+  ;;
+  ;; A describer entry is a cons cell from the describer dictionary's underlying alist:
+  ;; (ov-type . (type detect display edit has-right-neighbor right-neighbor nesting-allowed overlap-allowed))
+  ;;
+
+  (defmacro RT·BreadBox·describer·ov-type (entry)
+    `(car ,entry)
+    )
+
+  (defmacro RT·BreadBox·describer·detect (entry)
+    `(nth 1 (cdr ,entry))
+    )
+
+  (defmacro RT·BreadBox·describer·display (entry)
+    `(nth 2 (cdr ,entry))
+    )
+
+  (defmacro RT·BreadBox·describer·edit (entry)
+    `(nth 3 (cdr ,entry))
+    )
+
+  (defmacro RT·BreadBox·describer·has-right-neighbor (entry)
+    `(nth 4 (cdr ,entry))
+    )
+
+  (defmacro RT·BreadBox·describer·right-neighbor (entry)
+    `(nth 5 (cdr ,entry))
+    )
+
+  (defmacro RT·BreadBox·describer·can-be-nested (entry)
+    `(nth 6 (cdr ,entry))
+    )
+
+  (defmacro RT·BreadBox·describer·overlap-allowed (entry)
+    `(nth 7 (cdr ,entry))
+    )
+
 
   ;; overlay
   ;;
@@ -266,26 +419,26 @@
     (RT·BreadBox·stack·stack-is-empty RT·BreadBox·stack·overlay-stack)
     )
 
-  ;; By contract, user gives non-null substrate_TM ad ov-type_to_fn-list_TM.
+
+  ;; By contract, user gives non-null substrate_TM and describer_entry_TM.
   ;; The substrate_TM is a sequence of characters/bytes that we are scanning over.
-  ;; Each overlay type, ov-type, has its own detector function
-  (defun RT·BreadBox·buffer·scan-tape (substrate_TM describer_dict theme_alist)
+  (defun RT·BreadBox·buffer·scan-tape (substrate_TM describer_dict_TM theme_alist)
     "Scan substrate for sequences to put overlays over."
 
     (RT·TM·cue-leftmost substrate_TM) 
     (while 
       (progn
         
-        (RT·TM·cue-leftmost ov-type_to_fn-list_TM)
+        (RT·TM·cue-leftmost describer_dict_TM)
         (while
           (let*
-            ( ;; lookup the detect function to try
-              (ov-type_and_fn_list (RT·TM·read ov-type_to_fn-list_TM))
-              (ov-type (car ov-type_and_fn_list))
-              (fn-list (cdr ov-type_and_fn_list))
-              (detect (nth 1 fn-list))
+            ( 
+              (detect (RT·BreadBox·describer·detect (RT·TM·read describer_dict_TM)))
               )
-            
+              
+
+substrate_TM
+              (funcall detect lookahead_TM))
 
                 (let
                   (
@@ -311,7 +464,7 @@
                       
                       ;; Recursive internal scan checked via overlay property
                       (if (overlay-get ov 'RT·BreadBox·can-be-nested)
-                        (RT·BreadBox·buffer·scan-tape payload_TM ov-type_to_fn-list_alist theme_alist)
+                        (RT·BreadBox·buffer·scan-tape payload_TM describer_dict theme_alist)
                         )
                       
                       ;; INSTANT JUMP: Bypass the payload entirely to avoid illegal character reads
@@ -319,7 +472,7 @@
                       ))
                   
                   ;; Center break logic for the ov-type_to_fn-list_TM iteration
-                  (if (RT·TM·on-rightmost ov-type_to_fn-list_TM)
+                  (if (RT·TM·has-right-neighbor ov-type_to_fn-list_TM)
                     nil ;; Terminate inner loop
                     (progn
                       (RT·TM·step ov-type_to_fn-list_TM)
@@ -328,7 +481,7 @@
                   )))))))
 
           ;; Center break logic for the substrate_TM iteration
-          (if (RT·TM·on-rightmost substrate_TM)
+          (if (RT·TM·has-right-neighbor substrate_TM)
             nil ;; Terminate outer loop
             (progn
               (if (not found-nested_TM)
@@ -338,28 +491,44 @@
               ))
           ))
 
-
 ;;;-----------------------------------------------------------------------------
 ;;; API
 ;;;
 
   (defun RT·BreadBox·type·register (ov-type definition_list)
-    "Register a new BreadBox type."
+    "Register the canonical definition of a BreadBox type."
     (RT·BreadBox·introspection·write-if 'RT·BreadBox·type·register "Invoked.")
+    (if
+      (null RT·BreadBox·describer_dict)
+      (setq RT·BreadBox·describer_dict (RT·dict·make))
+      )
+    (RT·dict·write RT·BreadBox·describer_dict ov-type definition_list)
+    )
+
+  (defun RT·BreadBox·topology·allow (substrate-type nested-type)
+    "Allow a specific nested-type to exist within a substrate-type."
+    (RT·BreadBox·introspection·write-if 'RT·BreadBox·topology·allow "Invoked.")
+    (if
+      (null RT·BreadBox·topology_dict)
+      (setq RT·BreadBox·topology_dict (RT·dict·make))
+      )
     (let
       (
-        (existing_cons (assq ov-type RT·BreadBox·type_alist))
+        (allowed_dict (RT·dict·read RT·BreadBox·topology_dict substrate-type))
         )
       (if
-        existing_cons
-        (setcdr existing_cons definition_list)
-        (push (cons ov-type definition_list) RT·BreadBox·type_alist)
-        )))
+        (null allowed_dict)
+        (progn
+          (setq allowed_dict (RT·dict·make))
+          (RT·dict·write RT·BreadBox·topology_dict substrate-type allowed_dict)
+          ))
+      ;; We write 't' as the value because this inner dict acts purely as a Set of allowed keys
+      (RT·dict·write allowed_dict nested-type t)
+      ))
 
-  (defun RT·BreadBox·buffer·scan-host (ov-type_to_fn-list_alist theme_alist)
+  (defun RT·BreadBox·buffer·scan-host (theme_alist)
     "Entry point to scan the host document. Bootstraps the mode-specific tape machine."
     (RT·BreadBox·introspection·write-if 'RT·BreadBox·buffer·scan-host "Invoked.")
-    (setq RT·BreadBox·type_alist ov-type_to_fn-list_alist)
     (setq RT·BreadBox·theme_alist theme_alist)
     (let
       (
@@ -373,7 +542,8 @@
           (
             (host_TM (funcall tm_factory))
             )
-          (RT·BreadBox·buffer·scan-tape host_TM RT·BreadBox·type_alist RT·BreadBox·theme_alist)
+          ;; Major-mode serves as the outermost substrate type
+          (RT·BreadBox·buffer·scan-tape host_TM major-mode RT·BreadBox·theme_alist)
           ))))
 
   (defun RT·BreadBox·buffer·insert-binary-payload-with-overlay (binary-data display-lambda)
@@ -610,68 +780,78 @@
 ;;;   When nested, initially the outermost literal is opened, then successive select rotates through the literals.
 ;;;
 
-  ;; externally defined lambdas that get passed into BreadBox interface functions
-  ;;
+;;;-----------------------------------------------------------------------------
+;;; example-escape-literal 
+;;;
 
-(defun RT·BreadBox·example-escape-literal·detect-esc-hex (lookahead_TM)
-    "Detector operating over a Tape Machine. 
+  (defun RT·BreadBox·example-escape-literal·detect_UTF8 (TM_substrate_UTF8)
+    "Detector operating over a UTF-8 Tape Machine. 
      Returns '(overlay payload_TM resume_pos) on success, or nil on failure."
     (let
       (
-        (start_val (RT·TM·read lookahead_TM))
+        (prefix_TM (RT·TM·make_string-tape "\e"))
+        (suffix_TM (RT·TM·make_string-tape "\e"))
         )
       (if
-        (eq start_val ?\e)
+        (RT·BreadBox·eq-prefix_UTF8 TM_substrate_UTF8 prefix_TM)
         (let
           (
-            (leftmost_pos (RT·TM·get-pos lookahead_TM))
+            (leftmost_pos (RT·TM·get-pos TM_substrate_UTF8))
+            (lookahead_TM (RT·TM·entangled-copy TM_substrate_UTF8))
             )
-          (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect-esc-hex "Leftmost ESC found.")
+          (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect_UTF8 "Leftmost ESC found.")
+          
+          ;; Advance the lookahead head past the 1-character prefix
           (RT·TM·step lookahead_TM)
           
           (let
             (
               (found-end_bool
                 (catch 'found
-                  (while (progn
-                    (if (RT·TM·on-rightmost lookahead_TM)
+                  (while
+                    (if (not (RT·TM·has-right-neighbor lookahead_TM))
                       nil
-                      (let ((next_val (RT·TM·read lookahead_TM)))
-                        (if (eq next_val ?\e)
-                          (throw 'found t)
-                          (progn (RT·TM·step lookahead_TM) t)
-                          )))))
+                      (if (RT·BreadBox·eq-prefix_UTF8 lookahead_TM suffix_TM)
+                        (throw 'found t)
+                        (progn
+                          (RT·TM·step lookahead_TM)
+                          t
+                          ))))
                   nil
                   ))
               )
             (if found-end_bool
               (let
                 (
+                  ;; \e is 1 char, so rightmost-right-neighbor is 1 cell past current pos
                   (rightmost-right-neighbor_pos (1+ (RT·TM·get-pos lookahead_TM)))
                   )
-                (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect-esc-hex "Rightmost ESC found.")
+                (RT·BreadBox·introspection·write-if 'RT·BreadBox·example-escape-literal·detect_UTF8 "Rightmost ESC found.")
                 
-                ;; Advance the lookahead TM exactly one cell past the BreadBox to capture the resume token
-                (if (not (RT·TM·on-rightmost lookahead_TM))
+                ;; Advance lookahead TM exactly 1 cell past the BreadBox suffix to capture the resume token
+                (if (RT·TM·has-right-neighbor lookahead_TM)
                   (RT·TM·step lookahead_TM)
                   )
-                  
+                
                 (let*
                   (
                     (resume_pos (RT·TM·get-pos lookahead_TM))
                     (rightmost_pos (1- rightmost-right-neighbor_pos))
                     (ov (RT·BreadBox·overlay·make leftmost_pos rightmost_pos))
-                    (payload_TM (RT·TM·make-buffer-tape (1+ leftmost_pos) (1- rightmost_pos) (1+ leftmost_pos)))
+                    ;; The payload strictly excludes the \e characters on both sides
+                    (payload_TM (RT·TM·make_buffer-tape (1+ leftmost_pos) (1- rightmost_pos) (1+ leftmost_pos)))
                     )
                   (overlay-put ov 'RT·BreadBox·type 'esc-hex)
                   (overlay-put ov 'RT·BreadBox·can-be-nested t)
                   
                   (list ov payload_TM resume_pos)
                   ))
-              nil
+              nil ;; Failed to find suffix
               )))
-        nil
+        nil ;; Not a matching prefix
         )))
+
+
 
   (defun RT·BreadBox·example-escape-literal·display (ov binary-data theme_alist)
     "Display lambda called by the scanner or inserter."
@@ -696,20 +876,19 @@
     (let
       (
         (active_theme (RT·BreadBox·theme·make-default))
-        (example_type_alist
-          (list
-            (cons 'esc-hex
-              (list
-                'esc-hex
-                'RT·BreadBox·example-escape-literal·detect-esc-hex
-                'RT·BreadBox·example-escape-literal·display  
-                nil
-                nil
-                nil
-                nil
-                nil
-                ))))
+        (example_dict (RT·dict·make))
         )
+      
+      (RT·dict·write example_dict 'esc-hex
+        (list
+          'esc-hex
+          'RT·BreadBox·example-escape-literal·detect-esc-hex
+          'RT·BreadBox·example-escape-literal·display  
+          nil nil nil nil nil
+          ))
+          
       ;; Call the host scan entry point
-      (RT·BreadBox·buffer·scan-host example_type_alist active_theme)
+      (RT·BreadBox·buffer·scan-host example_dict active_theme)
       ))
+
+
