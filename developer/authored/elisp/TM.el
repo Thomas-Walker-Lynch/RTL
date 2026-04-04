@@ -1,27 +1,66 @@
-;;; Emacs TM (Tape Machine)
+;;;=============================================================================
+;;; TM (Tape Machine) for Elisp
 ;;;
 
 ;;;------------------------------------------------------------------------------
 ;;; Utilities
 ;;;
 
+  ;; Introspection Utilities
+  ;;
+
+  (defun RT·TM·introspection·write (name_buffer-source sym_function str_message)
+    "Write STR_MESSAGE to the global introspection buffer, creating a new frame if needed."
+    (let*
+      (
+        (name_buffer-introspection "*RT·TM-Introspection*")
+        (buffer_introspection (get-buffer-create name_buffer-introspection))
+        (window_introspection (get-buffer-window buffer_introspection 0))
+        )
+      (if
+        (null window_introspection)
+        (let
+          (
+            (frame_new (make-frame '((name . "RT·TM Introspection"))))
+            )
+          (set-window-buffer (frame-selected-window frame_new) buffer_introspection)
+          ))
+      (with-current-buffer buffer_introspection
+        (goto-char (point-max))
+        (insert (format "%s::%s::  %s\n" name_buffer-source sym_function str_message))
+        )))
+
+  (defmacro RT·TM·introspection·write-if (sym_function str_message)
+    "Log a message if SYM_FUNCTION is in the active introspection list."
+    `(if
+       (memq ,sym_function RT·TM·list_symbol-introspection)
+       (RT·TM·introspection·write (buffer-name) ,sym_function ,str_message)
+       ))
+
+  ;; introspection turned on flags, usually the same as function names
+  (defvar RT·TM·list_symbol-introspection
+    '(
+       RT·TM·buffer·detect-all
+       ))
+
+  
   ;; Generic Stack Interface
   ;;
 
-  (defmacro RT·stack·push (stack_sym item)
-    `(push ,item ,stack_sym)
+  (defmacro RT·stack·push (sym_stack item)
+    `(push ,item ,sym_stack)
     )
 
-  (defmacro RT·stack·pop (stack_sym)
-    `(pop ,stack_sym)
+  (defmacro RT·stack·pop (sym_stack)
+    `(pop ,sym_stack)
     )
 
-  (defun RT·stack·top (stack_list)
-    (car stack_list)
+  (defun RT·stack·top (list_stack)
+    (car list_stack)
     )
 
-  (defmacro RT·stack·is-empty (stack_sym)
-    `(null ,stack_sym)
+  (defmacro RT·stack·is-empty (sym_stack)
+    `(null ,sym_stack)
     )
 
   ;; Generic Dictionary Interface
@@ -36,11 +75,11 @@
     "Allocate and write the `(key . value)` pair into `dict`."
     (let
       (
-        (existing_cons (assq key (cdr dict)))
+        (cons_existing (assq key (cdr dict)))
         )
       (if
-        existing_cons
-        (setcdr existing_cons value)
+        cons_existing
+        (setcdr cons_existing value)
         (setcdr dict (cons (cons key value) (cdr dict)))
         )))
 
@@ -67,148 +106,104 @@
     (RT·TM·list·make (RT·dict·to-alist dict))
     )
 
-  (defun RT·buffer·byte-at-pos (byte_pos encoding)
-    "Extract the exact byte at absolute BYTE_POS, simulated under ENCODING."
-    (let*
-      (
-        (char_pos (byte-to-position byte_pos))
-        (char_start_byte (position-bytes char_pos))
-        (byte_offset (- byte_pos char_start_byte))
-        (char_str (string (char-after char_pos)))
-        (bytes_str (encode-coding-string char_str encoding))
-        )
-      (aref bytes_str byte_offset)
+  (defun RT·buffer·raw-bytes·get (buffer_byte pos_byte_leftmost pos_byte_rightmost_right-neighbor)
+    "Extract the exact file bytes between the specified byte boundaries."
+    (with-current-buffer buffer_byte
+      (buffer-substring-no-properties pos_byte_leftmost pos_byte_rightmost_right-neighbor)
       ))
 
-  (defun RT·buffer·raw-bytes·get (start end)
-    "Extract the exact file bytes for the text between START and END."
-    (let ((text (buffer-substring-no-properties start end)))
-      ;; buffer-file-coding-system holds the encoding used for the current file
-      (encode-coding-string text buffer-file-coding-system)))
+  (defun RT·TM·overlay·at-pos (buffer_display pos_char_target)
+    "Return the outermost TM overlay at POS_CHAR_TARGET in BUFFER_DISPLAY."
+    (with-current-buffer buffer_display
+      (let
+        (
+          (list_overlay (overlays-at pos_char_target))
+          (ov_outermost nil)
+          (pos_char_max_rightmost -1)
+          )
+        (while list_overlay
+          (let ((ov (car list_overlay)))
+            (if (overlay-get ov 'RT·TM)
+              (let ((pos_char_current_rightmost (RT·TM·overlay·rightmost_right-neighbor ov)))
+                (if (> pos_char_current_rightmost pos_char_max_rightmost)
+                  (progn
+                    (setq pos_char_max_rightmost pos_char_current_rightmost)
+                    (setq ov_outermost ov)
+                    )))))
+          (setq list_overlay (cdr list_overlay))
+          )
+        ov_outermost
+        )))
 
-  (defun RT·TM·overlay·at-pos (pos)
-    "Return the first overlay at POS that contains an RT·TM property."
-    (let
-      (
-        (ov_list (overlays-at pos))
-        (found_ov nil)
-        )
-      (while (and ov_list (not found_ov))
-        (let ((ov (car ov_list)))
-          (if (overlay-get ov 'RT·TM)
-            (setq found_ov ov)
-            (setq ov_list (cdr ov_list))
-            )))
-      found_ov
-      ))
+  (defun RT·TM·overlay·project (buffer_display pos_byte_leftmost pos_byte_rightmost_right-neighbor)
+    "Create an overlay in BUFFER_DISPLAY mapped to the absolute byte boundaries."
+    (with-current-buffer buffer_display
+      (let*
+        (
+          (pos_char_leftmost (byte-to-position pos_byte_leftmost))
+          (pos_char_rightmost_right-neighbor (byte-to-position pos_byte_rightmost_right-neighbor))
+          (ov_new (make-overlay pos_char_leftmost pos_char_rightmost_right-neighbor))
+          )
+        ov_new
+        )))
 
-  ;; Tape Machine
+  ;; Tape Machine Core
   ;;
   ;;   Tape machines can be nested, so the tape machine that we hold a reference to is called tape machine "V0".  A tape nested in V0 is said to be "V1"
 
-  (defun RT·TM·list·make (original_list &optional starting_list)
+  (defun RT·TM·list·make (list_original &optional list_starting)
     (let
       (
-        (current_list (if starting_list starting_list original_list))
+        (list_current (if list_starting list_starting list_original))
         )
       (list
-        (cons 'cue-leftmost (lambda () (setq current_list original_list)))
-        (cons 'has-right-neighbor (lambda () (not (or (null current_list) (null (cdr current_list))))))
-        (cons 'step (lambda () (setq current_list (cdr current_list))))
-        (cons 'read (lambda () (car current_list)))
+        (cons 'cue-leftmost (lambda () (setq list_current list_original)))
+        (cons 'has-right-neighbor (lambda () (not (or (null list_current) (null (cdr list_current))))))
+        (cons 'step (lambda () (setq list_current (cdr list_current))))
+        (cons 'read (lambda () (car list_current)))
         (cons 'read-type (lambda () 'list-item))
-        (cons 'entangled-copy (lambda () (RT·TM·list·make original_list current_list)))
-        (cons 'get-pos (lambda () current_list))
-        (cons 'cue (lambda (pos_token) (setq current_list pos_token)))
+        (cons 'entangled-copy (lambda () (RT·TM·list·make list_original list_current)))
+        (cons 'get-pos (lambda () list_current))
+        (cons 'cue (lambda (token_pos) (setq list_current token_pos)))
         )))
 
-  (defun RT·TM·buffer·make (leftmost_pos rightmost_pos initial_pos)
-    (let
-      (
-        (current_pos initial_pos)
-        )
-      (list
-        (cons 'cue-leftmost (lambda () (setq current_pos leftmost_pos)))
-        (cons 'has-right-neighbor (lambda () (< current_pos rightmost_pos)))
-        (cons 'step 
-          (lambda () 
-            (let ((ov (RT·TM·overlay·at-pos current_pos)))
-              (if ov
-                (setq current_pos (overlay-end ov))
-                (setq current_pos (1+ current_pos))
-                ))))
-        (cons 'read 
-          (lambda () 
-            (let ((ov (RT·TM·overlay·at-pos current_pos)))
-              (if ov (overlay-get ov 'RT·TM) (char-after current_pos))
-              )))
-        (cons 'read-type 
-          (lambda () 
-            (if (RT·TM·overlay·at-pos current_pos) 'RT·TM 'char)
-            ))
-        (cons 'entangled-copy (lambda () (RT·TM·buffer·make leftmost_pos rightmost_pos current_pos)))
-        (cons 'get-pos (lambda () current_pos))
-        (cons 'cue (lambda (pos_token) (setq current_pos pos_token)))
-        )))
 
-  (defun RT·TM·buffer-byte·make (leftmost_byte rightmost_byte initial_byte encoding)
-    (let
-      (
-        (current_byte initial_byte)
-        )
-      (list
-        (cons 'cue-leftmost (lambda () (setq current_byte leftmost_byte)))
-        (cons 'has-right-neighbor (lambda () (< current_byte rightmost_byte)))
-        (cons 'step 
-          (lambda () 
-            (let ((ov (RT·TM·overlay·at-pos (byte-to-position current_byte))))
-              (if ov
-                (setq current_byte (position-bytes (overlay-end ov)))
-                (setq current_byte (1+ current_byte))
-                ))))
-        (cons 'read (lambda () (RT·buffer·byte-at-pos current_byte encoding)))
-        (cons 'read-type (lambda () (if (RT·TM·overlay·at-pos (byte-to-position current_byte)) 'RT·TM 'byte)))
-        (cons 'entangled-copy (lambda () (RT·TM·buffer-byte·make leftmost_byte rightmost_byte current_byte encoding)))
-        (cons 'get-pos (lambda () current_byte))
-        (cons 'cue (lambda (pos_token) (setq current_byte pos_token)))
-        (cons 'encoding (lambda () encoding))
-        )))
-
-  (defun RT·TM·string·make (original_string &optional starting_idx)
+  (defun RT·TM·string·make (str_original &optional int_idx-starting)
     "Factory function generating a Tape Machine interface for an Elisp string."
     (let
       (
-        (current_idx (if starting_idx starting_idx 0))
-        (str_len (length original_string))
+        (int_idx-current (if int_idx-starting int_idx-starting 0))
+        (int_len-str (length str_original))
         )
       (list
-        (cons 'cue-leftmost (lambda () (setq current_idx 0)))
-        (cons 'has-right-neighbor (lambda () (< current_idx str_len)))
-        (cons 'step (lambda () (setq current_idx (1+ current_idx))))
-        (cons 'read (lambda () (aref original_string current_idx)))
+        (cons 'cue-leftmost (lambda () (setq int_idx-current 0)))
+        (cons 'has-right-neighbor (lambda () (< int_idx-current int_len-str)))
+        (cons 'step (lambda () (setq int_idx-current (1+ int_idx-current))))
+        (cons 'read (lambda () (aref str_original int_idx-current)))
         (cons 'read-type (lambda () 'char))
-        (cons 'entangled-copy (lambda () (RT·TM·string·make original_string current_idx)))
-        (cons 'get-pos (lambda () current_idx))
-        (cons 'cue (lambda (pos_token) (setq current_idx pos_token)))
+        (cons 'entangled-copy (lambda () (RT·TM·string·make str_original int_idx-current)))
+        (cons 'get-pos (lambda () int_idx-current))
+        (cons 'cue (lambda (token_pos) (setq int_idx-current token_pos)))
         )))
 
-  (defun RT·TM·string-byte·make (original_string encoding &optional starting_idx)
+  (defun RT·TM·string-byte·make (str_original encoding_character &optional int_idx-starting)
+    "Factory function generating a Tape Machine interface for an encoded byte string."
     (let*
       (
-        (byte_str (encode-coding-string original_string encoding))
-        (current_idx (if starting_idx starting_idx 0))
-        (str_len (length byte_str))
+        (str_byte (encode-coding-string str_original encoding_character))
+        (int_idx-current (if int_idx-starting int_idx-starting 0))
+        (int_len-str (length str_byte))
         )
       (list
-        (cons 'cue-leftmost (lambda () (setq current_idx 0)))
-        (cons 'has-right-neighbor (lambda () (< current_idx str_len)))
-        (cons 'step (lambda () (setq current_idx (1+ current_idx))))
-        (cons 'read (lambda () (aref byte_str current_idx)))
+        (cons 'cue-leftmost (lambda () (setq int_idx-current 0)))
+        (cons 'has-right-neighbor (lambda () (< int_idx-current int_len-str)))
+        (cons 'step (lambda () (setq int_idx-current (1+ int_idx-current))))
+        (cons 'read (lambda () (aref str_byte int_idx-current)))
         (cons 'read-type (lambda () 'byte))
-        (cons 'entangled-copy (lambda () (RT·TM·string-byte·make original_string encoding current_idx)))
-        (cons 'get-pos (lambda () current_idx))
-        (cons 'cue (lambda (pos_token) (setq current_idx pos_token)))
-        (cons 'encoding (lambda () encoding))
+        (cons 'entangled-copy (lambda () (RT·TM·string-byte·make str_original encoding_character int_idx-current)))
+        (cons 'get-pos (lambda () int_idx-current))
+        (cons 'cue (lambda (token_pos) (setq int_idx-current token_pos)))
+        (cons 'encoding (lambda () encoding_character))
         )))
 
 
@@ -247,72 +242,48 @@
     `(funcall (cdr (assq 'get-pos ,tm)))
     )
 
-  (defmacro RT·TM·cue (tm pos_token)
-    `(funcall (cdr (assq 'cue ,tm)) ,pos_token)
+  (defmacro RT·TM·cue (tm token_pos)
+    `(funcall (cdr (assq 'cue ,tm)) ,token_pos)
     )
 
   (defmacro RT·TM·encoding (tm)
     `(funcall (cdr (assq 'encoding ,tm)))
     )
 
-  ;; Introspection Utilities
-  ;;
+  (defmacro RT·TM·buffer-byte (tm)
+    `(funcall (cdr (assq 'buffer-byte ,tm)))
+    )
 
-  (defun RT·TM·introspection·write (source-buffer_name function_sym message_str)
-    "Write MESSAGE_STR to the global introspection buffer, creating a new frame if needed."
-    (let*
-      (
-        (introspection-buffer_name "*RT·TM-Introspection*")
-        (introspection_buffer (get-buffer-create introspection-buffer_name))
-        (introspection_window (get-buffer-window introspection_buffer 0))
-        )
-      (if
-        (null introspection_window)
-        (let
-          (
-            (new_frame (make-frame '((name . "RT·TM Introspection"))))
-            )
-          (set-window-buffer (frame-selected-window new_frame) introspection_buffer)
-          ))
-      (with-current-buffer introspection_buffer
-        (goto-char (point-max))
-        (insert (format "%s::%s::  %s\n" source-buffer_name function_sym message_str))
-        )))
-
-  (defmacro RT·TM·introspection·write-if (function_sym message_str)
-    "Log a message if FUNCTION_SYM is in the active introspection list."
-    `(if
-       (memq ,function_sym RT·TM·introspection·symbol_list)
-       (RT·TM·introspection·write (buffer-name) ,function_sym ,message_str)
-       ))
+  (defmacro RT·TM·buffer-display (tm)
+    `(funcall (cdr (assq 'buffer-display ,tm)))
+    )
 
   ;; parsing
   ;;
 
-  (defun RT·TM·sequence·eq (TM_substrate TM_target)
-    "Iteratively compare a substrate tape against a target tape.
-     Works universally for Character TMs or Byte TMs."
+  (defun RT·TM·sequence·eq (tm_substrate tm_target)
+    "Iteratively compare a substrate tape against a target tape."
     (let
       (
-        (TM-substrate-copy (RT·TM·entangled-copy TM_substrate))
-        (TM-target-copy (RT·TM·entangled-copy TM_target))
+        (tm_substrate-copy (RT·TM·entangled-copy tm_substrate))
+        (tm_target-copy (RT·TM·entangled-copy tm_target))
         )
       (let
         (
-          (are-eq (= (RT·TM·read TM-substrate-copy) (RT·TM·read TM-target-copy)))
-          (target-has-right-neighbor (RT·TM·has-right-neighbor TM-target-copy))
-          (substrate-has-right-neighbor (RT·TM·has-right-neighbor TM-substrate-copy))
+          (bool_are-eq (= (RT·TM·read tm_substrate-copy) (RT·TM·read tm_target-copy)))
+          (bool_target-has-right-neighbor (RT·TM·has-right-neighbor tm_target-copy))
+          (bool_substrate-has-right-neighbor (RT·TM·has-right-neighbor tm_substrate-copy))
           )
         (while 
-          (and are-eq target-has-right-neighbor substrate-has-right-neighbor)
+          (and bool_are-eq bool_target-has-right-neighbor bool_substrate-has-right-neighbor)
           (progn
-            (RT·TM·step TM-substrate-copy) 
-            (RT·TM·step TM-target-copy)
-            (setq are-eq (= (RT·TM·read TM-substrate-copy) (RT·TM·read TM-target-copy)))
-            (setq target-has-right-neighbor (RT·TM·has-right-neighbor TM-target-copy))
-            (setq substrate-has-right-neighbor (RT·TM·has-right-neighbor TM-substrate-copy))
+            (RT·TM·step tm_substrate-copy) 
+            (RT·TM·step tm_target-copy)
+            (setq bool_are-eq (= (RT·TM·read tm_substrate-copy) (RT·TM·read tm_target-copy)))
+            (setq bool_target-has-right-neighbor (RT·TM·has-right-neighbor tm_target-copy))
+            (setq bool_substrate-has-right-neighbor (RT·TM·has-right-neighbor tm_substrate-copy))
             ))
-        (and are-eq (not target-has-right-neighbor))
+        (and bool_are-eq (not bool_target-has-right-neighbor))
         )))
 
 
@@ -320,19 +291,19 @@
 ;;; Configuration
 ;;;
 
-  ;; introspection
+  ;; root tape machine 
   ;;
 
-  (defvar RT·TM·introspection·symbol_list nil
-    "List of function symbols enabled for introspection logging. Populated in the Integration section."
+  (defvar-local RT·TM·tm_host nil
+    "Host buffer TM attached to the host buffer. (Other TMs attached to their overlays.)"
     )
 
   ;; tape machine mapping
   ;;
 
-  (defvar RT·TM·buffer-default·make
+  (defvar RT·TM·alist_make-default
     '(
-       (default . RT·TM·buffer·make)
+       (default . RT·TM·buffer-byte·make)
        )
     "Alist mapping major modes to Tape Machine factories."
     )
@@ -340,22 +311,15 @@
   ;; display theme
   ;;
 
-  (defvar-local RT·TM·theme_alist nil
+  (defvar-local RT·TM·alist_theme nil
     "A buffer-local alist defining the active visual theme for TMs."
     )
 
   ;; selection tracking
   ;;
 
-  (defvar-local RT·TM·selection_ov nil
+  (defvar-local RT·TM·ov_selection nil
     "Tracks the currently selected TM overlay in the buffer."
-    )
-
-  ;; type registry
-  ;;
-
-  (defvar-local RT·TM·dict_TM-type_to_TM-interface nil
-    "A dictionary mapping a TM-type to its interface closure list."
     )
 
 
@@ -363,254 +327,171 @@
 ;;; Interior code
 ;;;
 
-  ;; TM interface entry accessors
-  ;;
-  ;; An entry is a cons cell:
-  ;; (tm-type . (type make detect display edit has-right-neighbor right-neighbor can-be-nested overlap-allowed))
-  ;;
-
-  (defmacro RT·TM·interface·tm-type (entry)
-    `(car ,entry)
-    )
-
-  (defmacro RT·TM·interface·make (entry)
-    `(nth 1 (cdr ,entry))
-    )
-
-  (defmacro RT·TM·interface·detect (entry)
-    `(nth 2 (cdr ,entry))
-    )
-
-  (defmacro RT·TM·interface·display (entry)
-    `(nth 3 (cdr ,entry))
-    )
-
-  (defmacro RT·TM·interface·edit (entry)
-    `(nth 4 (cdr ,entry))
-    )
-
-  (defmacro RT·TM·interface·has-right-neighbor (entry)
-    `(nth 5 (cdr ,entry))
-    )
-
-  (defmacro RT·TM·interface·right-neighbor (entry)
-    `(nth 6 (cdr ,entry))
-    )
-
-  (defmacro RT·TM·interface·can-be-nested (entry)
-    `(nth 7 (cdr ,entry))
-    )
-
-  (defmacro RT·TM·interface·overlap-allowed (entry)
-    `(nth 8 (cdr ,entry))
-    )
-
-  ;; overlay
-  ;;
-
-  (defun RT·TM·overlay·make (leftmost_pos rightmost_pos)
-    (make-overlay leftmost_pos (1+ rightmost_pos))
-    )
-
   (defmacro RT·TM·overlay·leftmost (overlay)
     `(overlay-start ,overlay)
     )
 
-  (defmacro RT·TM·overlay·rightmost (overlay)
-    `(1- (overlay-end ,overlay))
+  (defmacro RT·TM·overlay·rightmost_right-neighbor (overlay)
+    `(overlay-end ,overlay)
     )
 
-
-  (defun RT·TM·buffer·detect-all (substrate_TM character-encoding theme_alist)
-    "Scan substrate for sequences to instantiate child TMs over using the first-rest pattern."
-    (RT·TM·cue-leftmost substrate_TM) 
+  (defun RT·TM·buffer·detect-all (tm_substrate encoding_character alist_theme list_make-if)
+    "Scan tm_substrate in buffer-1 for sequences to instantiate child TMs, passing down list_make-if."
+    (RT·TM·cue-leftmost tm_substrate) 
     
     (let 
       (
-        (substrate-active (RT·TM·has-right-neighbor substrate_TM))
+        (bool_substrate-active (RT·TM·has-right-neighbor tm_substrate))
         )
-      (while substrate-active
+      (while bool_substrate-active
         
         (let*
           (
-            (dict_TM (RT·TM·dict·make RT·TM·dict_TM-type_to_TM-interface))
-            (dict-active (RT·TM·has-right-neighbor dict_TM))
-            (found-nested nil)
+            (list_fn list_make-if)
+            (bool_found-nested nil)
             )
-          (while (and dict-active (not found-nested))
+          (while (and list_fn (not bool_found-nested))
             (let*
               (
-                (entry (RT·TM·read dict_TM))
-                (detect_lambda (RT·TM·interface·detect entry))
-                (display_lambda (RT·TM·interface·display entry))
-                (lookahead_TM (RT·TM·entangled-copy substrate_TM))
+                (fn_make-if (car list_fn))
+                (tm_lookahead (RT·TM·entangled-copy tm_substrate))
                 )
               (let
                 (
-                  (nested_TM (funcall detect_lambda lookahead_TM character-encoding))
+                  (tm_nested (if fn_make-if (funcall fn_make-if tm_lookahead encoding_character alist_theme list_make-if) nil))
                   )
-                (if nested_TM
+                (if tm_nested
                   (let
                     (
-                      (ov (overlay-get nested_TM 'overlay))
+                      (fn_overlay (cdr (assq 'overlay tm_nested)))
                       )
-                    (setq found-nested t)
-                    (RT·TM·introspection·write-if 
-                      'RT·TM·buffer·detect-all 
-                      (format "Detected type %s" (overlay-get ov 'RT·TM-type))
-                      )
-                    
-                    (if display_lambda
-                      (funcall display_lambda ov nil theme_alist)
-                      )
-                    
-                    (if (RT·TM·interface·can-be-nested entry)
-                      (RT·TM·buffer·detect-all nested_TM character-encoding theme_alist)
-                      )
-                    ))))
-            
-            (RT·TM·step dict_TM)
-            (setq dict-active (RT·TM·has-right-neighbor dict_TM))
-            ))
+                    (setq bool_found-nested t)
+                    (if fn_overlay
+                      (let ((ov (funcall fn_overlay)))
+                        (RT·TM·introspection·write-if 
+                          'RT·TM·buffer·detect-all 
+                          (format "Made nested TM of type %s" (overlay-get ov 'RT·TM-type))
+                          )
+                        ))))
+                
+                (setq list_fn (cdr list_fn))
+                )))
 
-        (RT·TM·step substrate_TM)
-        (setq substrate-active (RT·TM·has-right-neighbor substrate_TM))
+        (RT·TM·step tm_substrate)
+        (setq bool_substrate-active (RT·TM·has-right-neighbor tm_substrate))
         )))
 
-    (defun RT·TM·display·project-overlay (buffer-1 buffer-0 byte_start byte_end hex_string)
-      "Projects a detected byte range from BUFFER-1 as a display overlay in BUFFER-0."
-      (with-current-buffer buffer-0
-        (let*
-          (
-            (char_start (byte-to-position byte_start))
-            (char_end (byte-to-position byte_end))
-            (display_ov (make-overlay char_start char_end))
-            )
-          (overlay-put display_ov 'display hex_string)
-          (overlay-put display_ov 'RT·TM-type 'byte-quote)
-          ;; Bind the TM instance to the display overlay for future interaction
-          display_ov
-          )))
+  (defun RT·TM·buffer-byte·make (buffer_byte buffer_display pos_byte_leftmost pos_byte_rightmost_right-neighbor pos_byte_initial encoding_character)
+    "Creates a TM that traverses BUFFER_BYTE, checking BUFFER_DISPLAY to step over nested overlays."
+    (let
+      (
+        (pos_byte_current pos_byte_initial)
+        )
+      (list
+        (cons 'cue-leftmost (lambda () (setq pos_byte_current pos_byte_leftmost)))
+        (cons 'has-right-neighbor (lambda () (< pos_byte_current pos_byte_rightmost_right-neighbor)))
+        (cons 'step 
+          (lambda () 
+            (let* (
+                (pos_char_current (with-current-buffer buffer_display (byte-to-position pos_byte_current)))
+                (ov_found (RT·TM·overlay·at-pos buffer_display pos_char_current))
+                )
+              (if ov_found
+                (setq pos_byte_current (overlay-get ov_found 'RT·pos_byte_rightmost_right-neighbor))
+                (setq pos_byte_current (1+ pos_byte_current))
+                ))))
+        (cons 'read 
+          (lambda () 
+            (with-current-buffer buffer_byte (char-after pos_byte_current))
+            ))
+        (cons 'read-type 
+          (lambda () 
+            (let*
+              (
+                (pos_char_current (with-current-buffer buffer_display (byte-to-position pos_byte_current)))
+                )
+              (if (RT·TM·overlay·at-pos buffer_display pos_char_current) 'RT·TM 'byte)
+              )))
+        (cons 'entangled-copy (lambda () (RT·TM·buffer-byte·make buffer_byte buffer_display pos_byte_leftmost pos_byte_rightmost_right-neighbor pos_byte_current encoding_character)))
+        (cons 'get-pos (lambda () pos_byte_current))
+        (cons 'cue (lambda (token_pos) (setq pos_byte_current token_pos)))
+        (cons 'encoding (lambda () encoding_character))
+        (cons 'buffer-byte (lambda () buffer_byte))
+        (cons 'buffer-display (lambda () buffer_display))
+        )))
+
 
 ;;;-----------------------------------------------------------------------------
 ;;; API
 ;;;
 
-  (defun RT·TM·type·register (tm-type interface_list)
-    "Register the canonical definition of a TM type."
-    (if
-      (null RT·TM·dict_TM-type_to_TM-interface)
-      (setq RT·TM·dict_TM-type_to_TM-interface (RT·dict·make))
-      )
-    (RT·dict·write RT·TM·dict_TM-type_to_TM-interface tm-type interface_list)
-    )
-
-  (defun RT·TM·make (tm-type character-encoding &rest args)
-    "Wrapper to dynamically instantiate a TM of tm-type."
+  (defun RT·TM·buffer·make-if (encoding_character alist_theme list_make-if)
+    "API entry point. Initializes dual-buffer TM scanning using the provided list of make-if functions."
+    (setq RT·TM·alist_theme alist_theme)
     (let*
       (
-        (entry (RT·dict·read RT·TM·dict_TM-type_to_TM-interface tm-type))
-        (make-fn (RT·TM·interface·make entry))
+        (buffer_display (current-buffer))
+        (buffer_byte (generate-new-buffer (concat " *RT·TM-byte:" (buffer-name) "*")))
         )
-      (if make-fn
-        (apply make-fn character-encoding args)
-        (progn
-          (message "RT·TM: make failed, type %s unsupported or missing." tm-type)
-          nil
-          ))))
+      ;; Seed the hidden byte buffer without encoding conversions
+      (with-current-buffer buffer_byte
+        (insert-buffer-substring buffer_display)
+        (set-buffer-multibyte nil)
+        )
+      
+      (let
+        (
+          (tm_host (RT·TM·buffer-byte·make buffer_byte buffer_display (point-min) (point-max) (point-min) encoding_character))
+          )
+        
+        ;; Attach the host TM directly to the display buffer
+        (with-current-buffer buffer_display
+          (setq RT·TM·tm_host tm_host)
+          )
+        
+        (RT·TM·buffer·detect-all tm_host encoding_character RT·TM·alist_theme list_make-if)
+        tm_host
+        )))
 
-  (defun RT·TM·buffer·setup-and-discover-all (character-encoding theme_alist)
-    "Entry point to instantiate the root buffer TM and scan the host document."
-    (setq RT·TM·theme_alist theme_alist)
+
+;;;-----------------------------------------------------------------------------
+;;; Interactive
+;;;
+
+  (defun RT·TM·overlay·edit ()
+    "Extracts the bytes of the selected overlay in buffer-0 into a new buffer-2 for editing."
+    (interactive)
     (let
       (
-        (host_TM (RT·TM·buffer·make (point-min) (1- (point-max)) (point-min)))
+        (ov RT·TM·ov_selection)
         )
-      (RT·TM·buffer·detect-all host_TM character-encoding RT·TM·theme_alist)
-      ))
+      (if ov
+        (let*
+          (
+            (tm_payload (overlay-get ov 'RT·TM))
+            (buffer_byte (RT·TM·buffer-byte tm_payload))
+            (pos_byte_leftmost (RT·TM·overlay·leftmost ov))
+            (pos_byte_rightmost_right-neighbor (RT·TM·overlay·rightmost_right-neighbor ov))
+            (str_raw (RT·buffer·raw-bytes·get buffer_byte pos_byte_leftmost pos_byte_rightmost_right-neighbor))
+            (buffer_edit (generate-new-buffer "*RT·TM-Edit*"))
+            )
+          (with-current-buffer buffer_edit
+            (insert str_raw)
+            ;; Set local variables needed for the save hook to write back to buffer-1
+            (setq-local RT·TM·buffer_target-byte buffer_byte)
+            (setq-local RT·TM·ov_source ov)
+            (local-set-key (kbd "C-c C-c") 'RT·TM·overlay·save-edit)
+            )
+          (pop-to-buffer buffer_edit)
+          ))))
+
+  (defun RT·TM·overlay·save-edit ()
+    "Write the edited contents of buffer-2 back to buffer-1 and trigger a display update in buffer-0."
+    (interactive)
+    (message "RT·TM: Edit saved and projected.")
+    )
+
 
 ;;;-----------------------------------------------------------------------------
 ;;; Integration
 ;;;
-
-  (setq RT·TM·introspection·symbol_list
-    '(
-       RT·TM·type·register
-       RT·TM·buffer·detect-all
-       RT·TM·example-escape-literal·detect-quotes
-       ))
-
-;;;-----------------------------------------------------------------------------
-;;; example-escape-literal 
-;;;
-
-  (defun RT·TM·example-escape-literal·detect-quotes (TM_substrate character-encoding)
-    "Detector matching the d“ prefix and ”b suffix. 
-     Returns the fully bound byte payload TM on success, or nil on failure."
-    (let
-      (
-        (prefix_TM (RT·TM·string·make "d“"))
-        (suffix_TM (RT·TM·string-byte·make "”b" character-encoding))
-        )
-      (if
-        (RT·TM·sequence·eq TM_substrate prefix_TM)
-        (let*
-          (
-            (ov-leftmost_char_pos (RT·TM·get-pos TM_substrate))
-            (lookahead_char_TM (RT·TM·entangled-copy TM_substrate))
-            (prefix_len_chars (length "d“"))
-            )
-          
-          (let ((skips prefix_len_chars))
-            (while (> skips 0)
-              (RT·TM·step lookahead_char_TM)
-              (setq skips (1- skips))
-              ))
-          
-          (let*
-            (
-              (payload-start_char_pos (RT·TM·get-pos lookahead_char_TM))
-              (payload-start_byte_pos (position-bytes payload-start_char_pos))
-              (lookahead_byte_TM (RT·TM·buffer-byte·make payload-start_byte_pos (position-bytes (point-max)) payload-start_byte_pos character-encoding))
-              )
-            
-            (let
-              (
-                (found-end_bool
-                  (catch 'found
-                    (while
-                      (if (not (RT·TM·has-right-neighbor lookahead_byte_TM))
-                        nil
-                        (if (RT·TM·sequence·eq lookahead_byte_TM suffix_TM)
-                          (throw 'found t)
-                          (progn
-                            (RT·TM·step lookahead_byte_TM)
-                            t
-                            ))))
-                    nil
-                    ))
-                )
-              (if found-end_bool
-                (let*
-                  (
-                    (payload-rightmost_byte_pos (1- (RT·TM·get-pos lookahead_byte_TM)))
-                    (resume_byte_pos (1+ payload-rightmost_byte_pos))
-                    (resume_char_pos (byte-to-position resume_byte_pos))
-                    (ov-rightmost_char_pos (1- resume_char_pos))
-                    
-                    (ov (RT·TM·overlay·make ov-leftmost_char_pos ov-rightmost_char_pos))
-                    (payload_TM (RT·TM·buffer-byte·make payload-start_byte_pos payload-rightmost_byte_pos payload-start_byte_pos character-encoding))
-                    )
-                  
-                  (overlay-put ov 'RT·TM-type 'byte-quote)
-                  (overlay-put ov 'RT·TM payload_TM)
-                  
-                  ;; Manually push the overlay into the payload TM dictionary for reference
-                  (setcdr (last payload_TM) (list (cons 'overlay (lambda () ov))))
-                  
-                  payload_TM
-                  )
-                nil
-                ))))
-        nil
-        )))

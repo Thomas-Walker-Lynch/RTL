@@ -62,7 +62,7 @@ Converts to:
 d1 d0 d3 d2
 ```
 
-This is missed up. The correct answer would be `d3 d2 d1 d0`.
+This is messed up. The correct answer would be `d3 d2 d1 d0`.
 
 This example shows us that it is not possible to use the same algorithm to convert 32 bit numbers and 64 bit numbers.  Yet, when given an array of bytes, we can't know which bytes belong to which number type without external information that tells us. I.e. type binding is required, but type is a higher level construct.  This problem generalizes to cases of other mixed type data.
 
