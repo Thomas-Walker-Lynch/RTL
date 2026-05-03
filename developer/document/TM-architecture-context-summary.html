@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Elisp TM (Tape Machine) Context Summary</title>
+    <script src="setup.js"></script>
+    <script>
+      window.StyleRT.include('RT/theme');
+      window.StyleRT.include('RT/layout/article_tech_ref');
+    </script>
+  </head>
+  <body>
+    <RT-article>
+      <RT-title 
+        author="Gemini" 
+        date="2026-04-05" 
+        title="Elisp TM (Tape Machine) Context Summary">
+      </RT-title>
+
+      <RT-TOC level="1"></RT-TOC>
+
+      <h1>The Intuition (The Ape and the Vine)</h1>
+      <p>
+        Imagine a vine (the container) with grapes (the cells). The machine is a hand resting firmly on a grape. Because the hand is already on a grape, the ape can look at it (<RT-code>read</RT-code>) at any time without checking if it is there. To move (<RT-code>step</RT-code>), the ape must look ahead to ensure another grape exists before letting go. To look ahead without losing the current spot, the ape places a second hand on the same grape (<RT-term>entanglement</RT-term>) and moves it forward.
+      </p>
+
+      <h1>Topological Foundation (Space vs. Time)</h1>
+      <ul>
+        <li>
+          A tape is defined by topology, not time. It possesses a <RT-code>leftmost</RT-code> cell and a <RT-code>rightmost</RT-code> cell.
+        </li>
+        <li>
+          Temporal terms like <RT-code>first</RT-code> and <RT-code>last</RT-code> are strictly reserved for traversal order. Conflating structural location (<RT-code>leftmost</RT-code>) with traversal sequence (<RT-code>first</RT-code>) is a fundamental ontological error.
+        </li>
+      </ul>
+
+      <h1>Architecture & Contracts</h1>
+      <p>
+        The <RT-code>TM.el</RT-code> library provides factories (e.g., <RT-code>RT·TM·list·make</RT-code>, <RT-code>RT·TM·buffer-byte·make</RT-code>) that map Elisp containers to a standardized TM interface.
+      </p>
+      <ul>
+        <li>
+          <strong>The Invariant Read (<RT-code>RT·TM·read</RT-code>):</strong> The machine never rests in a void. If a machine exists, it rests on a valid cell. Therefore, reading requires no defensive null checks.
+        </li>
+        <li>
+          <strong>The Step Contract (<RT-code>RT·TM·has-right-neighbor</RT-code>):</strong> Operations rely on programmer-proven contracts. A programmer must explicitly verify the topology before invoking <RT-code>RT·TM·step</RT-code>.
+        </li>
+      </ul>
+
+      <h1>Memory-Safe Iteration</h1>
+      <p>
+        Sequences are traversed using loops designed to cleanly evaluate boundary conditions alongside current cell work, preventing out-of-bounds steps:
+      </p>
+      <ul>
+        <li><strong>Middle-Break Loop:</strong> The preferred iterative structure in Elisp (using the <RT-code>RT·loop</RT-code> and <RT-code>RT·break</RT-code> macros), executing the check and break cleanly in the middle of the evaluation.</li>
+        <li><strong>First/Rest Loop:</strong> The explicit fallback structure when middle-breaks are unavailable.</li>
+        <li><strong>Recursion:</strong> The last preference in Emacs Lisp due to the lack of Tail Call Optimization (TCO), which risks call stack exhaustion.</li>
+      </ul>
+
+      <h1>Concurrency, Entanglement, and Tape Sharing</h1>
+      <ul>
+        <li>
+          <strong>Uniplex (Solo):</strong> Provides exclusive access. Destructive operations (mutating the tape structure) are safe.
+        </li>
+        <li>
+          <strong>Multiplexed (Entangled):</strong> Allows multiple heads to safely share a tape substrate.
+        </li>
+        <li>
+          <strong>Entangled Copies (<RT-code>RT·TM·entangled-copy</RT-code>):</strong> The primary interface function for lookaheads. It clones a machine state to place a new head on the exact same substrate cell, allowing for non-destructive scans and side-effect-free function calls.
+        </li>
+        <li>
+          <strong>Safety of Simultaneous Entangled Machines:</strong> Multiple heads can exist simultaneously on the same tape substrate safely <i>if and only if</i> the underlying topology is stable. The container must not undergo structural mutations (deletions or insertions) that would remove a cell currently occupied by a resting machine. In <RT-code>TM.el</RT-code>, this makes simultaneous entanglement natively safe for strings and read-only buffers, but it requires strict guarantees when sharing mutable lists or active buffers without Entanglement Accounting (<RT-code>ea-tm</RT-code>).
+        </li>
+      </ul>
+
+      <h1>Examples</h1>
+      <h2>Example 1: Safe Iteration using Middle-Break</h2>
+      <p>
+        This example demonstrates an element-wise comparison between two sequences using <RT-code>RT·TM·entangled-copy</RT-code> for safety and the preferred <RT-code>RT·loop</RT-code> structure.
+      </p>
+      <RT-code>
+      (defun RT·TM·sequence·eq (tm_substrate tm_target)
+        "Iteratively compare a substrate tape against a target tape."
+        (let
+          (
+            (tm_substrate-copy (RT·TM·entangled-copy tm_substrate))
+            (tm_target-copy (RT·TM·entangled-copy tm_target))
+            )
+          (let
+            (
+              (bool_are-eq nil)
+              (bool_target-has-right-neighbor nil)
+              (bool_substrate-has-right-neighbor nil)
+              )
+            (RT·loop
+              ;; 1. The invariant read
+              (setq bool_are-eq (= (RT·TM·read tm_substrate-copy) (RT·TM·read tm_target-copy)))
+              
+              ;; 2. The pre-guard evaluation
+              (setq bool_target-has-right-neighbor (RT·TM·has-right-neighbor tm_target-copy))
+              (setq bool_substrate-has-right-neighbor (RT·TM·has-right-neighbor tm_substrate-copy))
+
+              ;; 3. The middle break
+              (if
+                (not (and bool_are-eq bool_target-has-right-neighbor bool_substrate-has-right-neighbor)) 
+                (RT·break (and bool_are-eq (not bool_target-has-right-neighbor)))
+                (progn
+                  ;; 4. Contract fulfilled, safe to step
+                  (RT·TM·step tm_substrate-copy) 
+                  (RT·TM·step tm_target-copy)
+                  )))
+            )))
+      </RT-code>
+
+    </RT-article>
+  </body>
+</html>

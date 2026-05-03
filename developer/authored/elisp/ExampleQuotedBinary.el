@@ -118,6 +118,11 @@
     (overlay-put ov 'face '(:background "gray15" :foreground "light green"))
     )
 
+  (defun RT·ExampleQuotedBinary·setup ()
+    (add-to-list 'RT·TM·list_make-if 'RT·ExampleQuotedBinary·make-if)
+    )
+
+
 ;;;-----------------------------------------------------------------------------
 ;;; Integration
 ;;;
